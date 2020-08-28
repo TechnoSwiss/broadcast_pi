@@ -21,7 +21,7 @@ Get the RPi powered up and on your network, then SSH into it using your favorite
 
 Next step is to get ffmpeg installed, and for that I compiled from source instead of using a pre-packaged binary. It does take some time to compile from source, so in my case I did it once and then cloned the SD card to each new system that I setup. I followed the instructions at https://iotfuse.com/2020/03/25/setting-up-a-raspberry-pi/ to compile, but here’s a quick rundown:
 sudo apt install git libasound2-dev libmp3lame-dev
-git clone --depth 1  https://cone.videolan.org/videolan/x264.git
+git clone --depth 1  https://code.videolan.org/videolan/x264.git
 cd x264
 ./configure --host=arm-unknown-linux-gnueabi --enable-static --disable-opencl
 make -j4
