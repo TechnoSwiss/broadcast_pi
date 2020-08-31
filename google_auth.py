@@ -40,7 +40,7 @@ def store_authenticated_service(credentials_file):
     with open(credentials_file, 'wb') as f:
         pickle.dump(credentials, f)
 
-def get_authenticated_service(credentials_file):
+def get_authenticated_service(credentials_file, args):
     # Authorize the request and store authorization credentials.
     if os.path.exists(credentials_file):
         with open(credentials_file, 'rb') as f:

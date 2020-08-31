@@ -45,7 +45,7 @@ if __name__ == '__main__':
     videos = []
     
     #authenticate with YouTube API
-    youtube = google_auth.get_authenticated_service(credentials_file)
+    youtube = google_auth.get_authenticated_service(credentials_file, auth)
   
     #attempt to get list of curreny videos from YouTube, the first video in this list should be the next URL used for live broadcasts
     try:
