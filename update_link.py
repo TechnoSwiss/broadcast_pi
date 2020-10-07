@@ -59,6 +59,10 @@ def list_my_uploaded_videos(youtube, uploads_playlist_id):
     return video_list
 
 def update_live_broadcast_link(live_broadcast_id, args):
+    if(args.host_name is None):
+        print("Nothing to update.")
+        return()
+
     link_file = open('link.html', 'w')
     link_file.write('<head>\n')
     link_file.write('  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />\n')
@@ -67,19 +71,16 @@ def update_live_broadcast_link(live_broadcast_id, args):
     link_file.write('  <meta http-equiv="Refresh" content="10; URL=https://www.youtube.com/watch?v=' + live_broadcast_id + '" />\n')
     link_file.write('</head>\n')
     link_file.write('<body>\n')
-    link_file.write('  <h1>Redirecting in 10 seconds...</h1>\n')
-    link_file.write('  <a href=https://www.youtube.com/watch?v=' + live_broadcast_id + '>Click here if not redirected</a><br><br>\n')
-    link_file.write('  The link for the video is: <a href=https://www.youtube.com/watch?v=' + live_broadcast_id + '>https://www.youtube.com/watch?v=' + live_broadcast_id + '</a><br>\n')
-    link_file.write('  <h1>Redirigiendo en 10 segundos...</h1>\n')
-    link_file.write('  <a href=https://www.youtube.com/watch?v=' + live_broadcast_id + '>Haga clic aqu&iacute; si no se redirige</a><br><br>\n')
-    link_file.write('  El enlace del video es: <a href=https://www.youtube.com/watch?v=' + live_broadcast_id + '>https://www.youtube.com/watch?v=' + live_broadcast_id + '</a><br>\n')
-    link_file.write('  <br><br><br><br>' + str(datetime.now()))
+    link_file.write('  <h1>Redirecting in 10 seconds...  /  Redirigiendo en 10 segundos...</h1>\n')
+    link_file.write('  <a href=https://www.youtube.com/watch?v=' + live_broadcast_id + '>Click here if not redirected  /  Haga clic aqu&iacute; si no se redirige</a><br><br>\n')
+    link_file.write('  The link for the video is  /  El enlace del video es: <br><a href=https://www.youtube.com/watch?v=' + live_broadcast_id + '>https://www.youtube.com/watch?v=' + live_broadcast_id + '</a><br>\n')
+    link_file.write('  <br><br>' + str(datetime.now()))
     link_file.write('</body>\n')
     link_file.close()
 
     ssh = SSHClient()
     
-    if os.path.exists(SSH_RSA_KEY_PASS):
+    if os.path.exists(SSH_RSA_KEY_PASS) and os.path.exists(args.home_dir + '/.ssh/id_rsa'):
         try:
             with open(SSH_RSA_KEY_PASS, 'r') as f:
                 ssh_pass = f.read().replace('\n', '')
@@ -88,14 +89,14 @@ def update_live_broadcast_link(live_broadcast_id, args):
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 ssh.connect(args.host_name, username=args.user_name, pkey=key)
                 with SCPClient(ssh.get_transport()) as scp:
-                    scp.put('link.html', 'public_html/broadcast/' + args.ward.lower() + '_' + args.url_key + '.html')
+                    scp.put('link.html', 'public_html/broadcast/' + args.ward.lower() + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
         except:
             if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward +  " Ward stake website host key failure!")
             print("SSH Host key failure.")
             exit()
     else:
-        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube SSH Key Required!")
-        print("SSH Key Missing for link upload.")
+        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube SSH Key and Password files are required!")
+        print("SSH Key or Password file is missing for link upload.")
         exit()
     
     ssh.close()
@@ -106,14 +107,23 @@ if __name__ == '__main__':
     parser.add_argument('-o','--host-name',type=str,help='The address for the web host to upload HTML link forward page to')
     parser.add_argument('-u','--user-name',type=str,help='The username for the web host')
     parser.add_argument('-D','--home-dir',type=str,help='Home directory SSH id_rsa key is stored under')
-    parser.add_argument('-k','--url-key',type=str,required=True,help='The 4-digit code at the end of the URL')
+    parser.add_argument('-k','--url-key',type=str,help='A 4-digit code added after the ward name at the end of the URL')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     args = parser.parse_args()
-  
+ 
+    if(args.host_name is not None or args.user_name is not None or args.home_dir is not None):
+        if(args.host_name is None or args.user_name is None or args.home_dir is None):
+            print("If host-name, user-name, or home-dir parameter is defined, all 3 parameters must be defined.")
+            exit()
+    if(args.num_from is not None or args.num_to is not None):
+        if(args.num_from is None or args.num_to is None):
+            print("If SMS notification numbers are defined, both From and To numbers must be defined.")
+            exit()
+
     credentials_file = args.ward.lower() + '.auth'
   
-    youtube = google_auth.get_authenticated_service(credentials_file)
+    youtube = google_auth.get_authenticated_service(credentials_file, args)
     
     #while we're at it, lets go ahead and setup the link too
     videos = []
