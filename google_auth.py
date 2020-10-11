@@ -46,7 +46,7 @@ def get_authenticated_service(credentials_file, args):
         with open(credentials_file, 'rb') as f:
             credentials = pickle.load(f)
     else:
-        if(args.num_from is not None): send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube Authentication Required!")
+        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube Authentication Required!")
         print("YouTube Authorization Required, please run google_auth.py")
         exit()
 
