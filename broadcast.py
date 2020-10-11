@@ -94,22 +94,26 @@ if __name__ == '__main__':
             streaming = True
             process = subprocess.Popen(split(ffmpeg), shell=False, stderr=subprocess.DEVNULL)
             while process.poll() is None:
+                time.sleep(1)
                 if os.path.exists(args.control_file) or datetime.now() > stop_time:
                     process.terminate()
                     process.wait()
-                time.sleep(1)
             streaming = False
         elif(stream == 0 and streaming == False):
             streaming = True
             process = subprocess.Popen(split(ffmpeg_img), shell=False, stderr=subprocess.DEVNULL)
             while process.poll() is None:
+                time.sleep(1)
                 if not os.path.exists(args.control_file) or datetime.now() > stop_time:
                     process.terminate()
                     process.wait()
-                time.sleep(1)
             streaming = False
 
-        time.sleep(1)
+        time.sleep(0.1)
+
+    #clean up control file so it's reset for next broadcast
+    if os.path.exists(args.control_file):
+        os.remove(args.control_file)
 
     time.sleep(args.delay_after * 60) # wait for X min before deleting video
     
@@ -134,8 +138,4 @@ if __name__ == '__main__':
     
     #make sure link on web host is current
     update_link.update_live_broadcast_link(current_id, args)
-
-    #clean up control file so it's reset for next broadcast
-    if os.path.exists(args.control_file):
-        os.remote(args.control_file)
 
