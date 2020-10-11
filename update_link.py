@@ -56,6 +56,7 @@ def list_my_uploaded_videos(youtube, uploads_playlist_id):
 
         playlistitems_list_request = youtube.playlistItems().list_next(
             playlistitems_list_request, playlistitems_list_response)
+    print(video_list)
     return video_list
 
 def update_live_broadcast_link(live_broadcast_id, args):

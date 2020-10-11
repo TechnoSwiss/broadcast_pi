@@ -97,7 +97,7 @@ if __name__ == '__main__':
                 if os.path.exists(args.control_file) or datetime.now() > stop_time:
                     process.terminate()
                     process.wait()
-                time.sleep(0.1)
+                time.sleep(1)
             streaming = False
         elif(stream == 0 and streaming == False):
             streaming = True
@@ -106,10 +106,10 @@ if __name__ == '__main__':
                 if not os.path.exists(args.control_file) or datetime.now() > stop_time:
                     process.terminate()
                     process.wait()
-                time.sleep(0.1)
+                time.sleep(1)
             streaming = False
 
-        time.sleep(0.1)
+        time.sleep(1)
 
     time.sleep(args.delay_after * 60) # wait for X min before deleting video
     
@@ -134,4 +134,8 @@ if __name__ == '__main__':
     
     #make sure link on web host is current
     update_link.update_live_broadcast_link(current_id, args)
+
+    #clean up control file so it's reset for next broadcast
+    if os.path.exists(args.control_file):
+        os.remote(args.control_file)
 
