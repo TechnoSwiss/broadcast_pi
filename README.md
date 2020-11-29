@@ -1,5 +1,7 @@
 # YouTube Live (RTMP) Automated Broadcast from Raspberry Pi
 
+MAJOR UPDATE: Updated to utilize more of the YouTube v3 API, should still work with existing setups, but please check if you update.
+
 We setup this project to broadcast Sunday services for several wards (congregations) in my local area. However these instructions should work for anybody looking to broadcast to YouTube (or any source that accepts an rtmp stream) using a Raspberry Pi.
 
 First up is a list of hardware that was used:
