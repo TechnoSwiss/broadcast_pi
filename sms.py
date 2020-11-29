@@ -2,6 +2,18 @@
 
 # Python script that sends SMS message using the Twilio SMS API https://www.twilio.com/
 
+# Twilio API has a free trial that will probably work for a long time if the volume of text messages is low, however it's $1/month plus per-use cost if you go past the free trial
+# There may be other APIs that could be used instead with better cost structures
+# There's also the possibility to use email to send SMS messages using the carriers email endpoints for SMS
+# Set that up something like:
+#carriers = {
+#    'att':    '@txt.att.net',
+#    'tmobile':' @tmomail.net',
+#    'verizon':  '@vtext.com',
+#}
+# and then in code the num_to would be setup like
+# num_to = '{0}{}'.format(num_to, carriers['att'])
+
 import argparse
 import os
 from twilio.rest import Client # pip3 install twilio

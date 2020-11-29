@@ -1,0 +1,62 @@
+*:focus {
+    outline: none;
+}
+
+#pauseResume {
+    display: block;
+    position: relative;
+    overflow: hidden;
+    font-size: 8vmin;
+    background-color: firebrick;
+    width: 40vmin;
+    height: 40vmin;
+    margin-left: -20vmin;
+    left: 50%;
+    color: white;
+    border: 1vmin solid black;
+    transform: rotate(0deg);
+}
+
+#pauseResume:active::before {
+    content: "";
+    width: 105%;
+    height: 200%;
+    top: 0px;
+    left: 0px;
+    display: block;
+    position: absolute;
+    background-color: rgba(255, 255, 255, .4);
+}
+
+#pauseResume::after {
+    content: "Pause";
+}
+
+#pauseResume.resume {
+    background-color: green;
+    border-radius: 20vmin;
+}
+
+#pauseResume.resume::after {
+    content: "Resume";
+}
+
+#pauseResume.disabled {
+    background-color: gray;
+}
+
+#pauseResume.disabled::after {
+    content: "Waiting";
+}
+
+#title,
+#status {
+    text-align: center;
+    font-size: 10vmin;
+    line-height: 15vmin;
+    text-transform: capitalize;
+}
+
+#status {
+    font-size: 5vmin;
+}

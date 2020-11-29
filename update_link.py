@@ -6,6 +6,7 @@
 
 import argparse
 import os
+import traceback
 import re
 import pickle
 
@@ -58,7 +59,7 @@ def list_my_uploaded_videos(youtube, uploads_playlist_id):
             playlistitems_list_request, playlistitems_list_response)
     return video_list
 
-def update_live_broadcast_link(live_broadcast_id, args):
+def update_live_broadcast_link(live_broadcast_id, args, filename = None):
     if(args.host_name is None):
         print("Nothing to update.")
         return()
@@ -89,10 +90,14 @@ def update_live_broadcast_link(live_broadcast_id, args):
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 ssh.connect(args.host_name, username=args.user_name, pkey=key)
                 with SCPClient(ssh.get_transport()) as scp:
-                    scp.put('link.html', 'public_html/broadcast/' + args.ward.lower() + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
+                    if(filename is not None):
+                        scp.put('link.html', filename)
+                    else:
+                        scp.put('link.html', 'public_html/broadcast/' + args.ward.lower() + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
         except:
-            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward +  " Ward stake website host key failure!")
+            #print(traceback.format_exc())
             print("SSH Host key failure.")
+            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward +  " Ward stake website host key failure!")
             exit()
     else:
         if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube SSH Key and Password files are required!")
@@ -107,6 +112,7 @@ if __name__ == '__main__':
     parser.add_argument('-o','--host-name',type=str,help='The address for the web host to upload HTML link forward page to')
     parser.add_argument('-u','--user-name',type=str,help='The username for the web host')
     parser.add_argument('-D','--home-dir',type=str,help='Home directory SSH id_rsa key is stored under')
+    parser.add_argument('-K','--html-filename',type=str,help='Override default upload path and filename, this must be full path and filename for target webserver')
     parser.add_argument('-k','--url-key',type=str,help='A 4-digit code added after the ward name at the end of the URL')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
@@ -137,8 +143,9 @@ if __name__ == '__main__':
             print("No Videos Found!")
             exit()
     except ():
+        #print(traceback.format_exc())
         print("YouTube Failed to get list of videos!")
         exit()
 
     #make sure link on hillsborostake.org is current
-    update_live_broadcast_link(videos[0], args)
+    iupdate_live_broadcast_link(videos[0], args, args.html_filename)
