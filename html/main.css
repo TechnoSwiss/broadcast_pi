@@ -2,7 +2,7 @@
     outline: none;
 }
 
-#pauseResume {
+#pauseResume, #extend {
     display: block;
     position: relative;
     overflow: hidden;
@@ -17,7 +17,16 @@
     transform: rotate(0deg);
 }
 
-#pauseResume:active::before {
+#extend {
+    color: black;
+    background-color: lightBlue;
+    height: 15vmin;
+    margin-top: 3vmin;
+    display: none;
+}
+
+#pauseResume:active::before,
+#extend:active::before {
     content: "";
     width: 105%;
     height: 200%;
@@ -41,22 +50,30 @@
     content: "Resume";
 }
 
-#pauseResume.disabled {
+#pauseResume.holding {
     background-color: gray;
 }
 
-#pauseResume.disabled::after {
-    content: "Waiting";
+#pauseResume.holding::after {
+    content: "Pause";
+}
+
+#pauseResume.holding.resume::after {
+    content: "Resume";
 }
 
 #title,
-#status {
+.status {
     text-align: center;
     font-size: 10vmin;
     line-height: 15vmin;
-    text-transform: capitalize;
 }
 
-#status {
+.status {
     font-size: 5vmin;
+    line-height: 5vmin;
+}
+
+#statusText2 {
+    font-size: 4vmin;
 }

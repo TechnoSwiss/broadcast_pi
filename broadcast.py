@@ -29,10 +29,13 @@ import insert_event # insert_event.py localfile
 import count_viewers # count_viewers.py localfile
 
 def check_extend(extend_file, stop_time, status_file, ward, num_from = None, num_to = None):
+    global extend_time
     if os.path.exists(extend_file):
-        stop_time = stop_time + timedelta(minutes=5)
+        extend_time += 5
         os.remove(extend_file)
-        update_status.update("stop", None, stop_time, status_file, ward, num_from, num_to)
+        if(args.extend_max is None or extend_time <= args.extend_max):
+            stop_time = stop_time + timedelta(minutes=5)
+            update_status.update("stop", None, stop_time, status_file, ward, num_from, num_to)
     return(stop_time)
 
 if __name__ == '__main__':
@@ -42,6 +45,7 @@ if __name__ == '__main__':
     parser.add_argument('-f','--control-file',type=str,default='pause',help='Path and filename for file used to Delay/Pause video stream')
     parser.add_argument('-p','--pause-image',type=str,default='pause.jpg',help='Path and filename for the JPG image that will be shown when stream is paused')
     parser.add_argument('-x','--extend-file',type=str,default='extend',help='Path and filename for file used to Extend broadcast by 5 min.')
+    parser.add_argument('-X','--extend-max',type=int,help='Maximum time broadcast can be extended in minutes')
     parser.add_argument('-S','--status-file',type=str,default='status',help='Path and fineame for file used to write out Start/Stop time status.')
     parser.add_argument('-n','--thumbnail',type=str,help='Path and filename for the JPG image that will be the video thumbnail')
     parser.add_argument('-o','--host-name',type=str,help='The address for the web host to upload HTML link forward page to')
@@ -61,6 +65,8 @@ if __name__ == '__main__':
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     args = parser.parse_args()
 
+    extend_time = 0 # keep track of extend time so we can cap it if needed
+
     start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time)
 
     if not os.path.exists(args.pause_image):
@@ -76,6 +82,10 @@ if __name__ == '__main__':
         video_delay = " -itsoffset " + str(abs(args.audio_delay))
     else:
         audio_delay = " -itsoffset " + str(abs(args.audio_delay))
+
+    # remove extend file when we first start so we don't accidently extend the broadcast at the begining
+    if os.path.exists(args.extend_file):
+        os.remove(args.extend_file)
  
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)
@@ -137,10 +147,6 @@ if __name__ == '__main__':
 
     yt.stop_broadcast(youtube, current_id, args.ward, args.num_from, args.num_to)
 
-    #clean up control file so it's reset for next broadcast
-    if os.path.exists(args.control_file):
-        os.remove(args.control_file)
-
     time.sleep(args.delay_after * 60) # wait for X min before deleting video
 
     if(args.email_from is not None and args.email_to is not None):
@@ -165,4 +171,8 @@ if __name__ == '__main__':
 
     # make sure link on web host is current
     update_link.update_live_broadcast_link(current_id, args, args.html_filename)
+
+    #clean up control file so it's reset for next broadcast
+    if os.path.exists(args.control_file):
+        os.remove(args.control_file)
 

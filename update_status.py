@@ -35,7 +35,7 @@ def update(update_type, start_time, stop_time, status_file, ward, num_from = Non
                         fp_status.write("stop," + stop_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%d %H:%M:%SZ') + "," + ward.lower() + '\r')
                     else:
                         fp_status.write(line)
-            if(update_type == "broadcast" or update_type == "start" or update_type == "paused"):
+            if(update_type == "broadcast" or update_type == "start" or update_type == "pause"):
                 if(update_type == "broadcast"):
                     fp_status.write("broadcast," + start_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%d %H:%M:%SZ') + "," + ward.lower() + '\n')
                 elif(update_type == "pause"):

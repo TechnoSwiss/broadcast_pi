@@ -3,7 +3,7 @@
 $path = "status";
 $action = $_GET["action"];
 
-$data = array("status"=>"", "action"=>$action);
+$data = array("action"=>$action);
 
 if(preg_match("/resume/i", $action)) {
     if(file_exists("$path/pause")) {                                                     
@@ -15,6 +15,13 @@ if(preg_match("/resume/i", $action)) {
             mkdir($path);
         }
         touch("$path/pause");
+    }
+} else if(preg_match("/extend/i", $action)) {
+    if(!file_exists("$path/extend")) {
+        if(!is_dir($path)) {
+            mkdir($path);
+        }
+        touch("$path/extend");
     }
 }
 
@@ -30,7 +37,6 @@ while(!feof($statusfile))
 }
 fclose($statusfile);
 
-$status = "broadcasting";
 $buttonPaused = file_exists("$path/pause");
 
 $data["buttonPaused"] = $buttonPaused;
