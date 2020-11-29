@@ -112,7 +112,7 @@ if __name__ == '__main__':
             streaming = True
             process = subprocess.Popen(split(ffmpeg), shell=False, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-    update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
+            update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
             while process.poll() is None:
                 time.sleep(1)
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
@@ -124,7 +124,7 @@ if __name__ == '__main__':
             streaming = True
             process = subprocess.Popen(split(ffmpeg_img), shell=False, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-    update_status.update("pause", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
+            update_status.update("pause", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
             while process.poll() is None:
                 time.sleep(1)
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
