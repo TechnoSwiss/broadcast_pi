@@ -28,6 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('-o','--host-name',type=str,help='The address for the web host to upload HTML link forward page to')
     parser.add_argument('-u','--user-name',type=str,help='The username for the web host')
     parser.add_argument('-D','--home-dir',type=str,help='Home directory SSH id_rsa key is stored under')
+    parser.add_argument('-U','--url-filename',type=str,help='Use this for web filename instead of Unit name.')
     parser.add_argument('-K','--html-filename',type=str,help='Override default upload path and filename, this must be full path and filename for target webserver')
     parser.add_argument('-k','--url-key',type=str,help='The 4-digit code at the end of the URL')
     parser.add_argument('-s','--start-time',type=str,help='Broadcast start time in HH:MM:SS')
