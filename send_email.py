@@ -60,7 +60,7 @@ def send_viewer_file(csv_file, email_from, email_to, ward, num_from = None, num_
 
         with smtplib.SMTP_SSL(email_auth[email_from]['server'], port, context=context) as server:
             server.login(email_from, email_auth[email_from]['password'])
-            server.sendmail(email_from, email_to,msg.as_string())
+            server.sendmail(email_from, email_to.split(','),msg.as_string())
     except:
         #print(traceback.format_exc())
         print("Failed to send CSV file email")

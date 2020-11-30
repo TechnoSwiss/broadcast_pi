@@ -32,17 +32,17 @@ def update(update_type, start_time, stop_time, status_file, ward, num_from = Non
                     fp_status.write(line)
                 if(unit.lower() == ward.lower() and update_type == "stop"):
                     if(action.lower() == "stop"):
-                        fp_status.write("stop," + stop_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%d %H:%M:%SZ') + "," + ward.lower() + '\r')
+                        fp_status.write("stop," + stop_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%dT%H:%M:%SZ') + "," + ward.lower() + '\r')
                     else:
                         fp_status.write(line)
             if(update_type == "broadcast" or update_type == "start" or update_type == "pause"):
                 if(update_type == "broadcast"):
-                    fp_status.write("broadcast," + start_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%d %H:%M:%SZ') + "," + ward.lower() + '\n')
+                    fp_status.write("broadcast," + start_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%dT%H:%M:%SZ') + "," + ward.lower() + '\n')
                 elif(update_type == "pause"):
-                    fp_status.write("pause," + start_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%d %H:%M:%SZ') + "," + ward.lower() + '\n')
+                    fp_status.write("pause," + start_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%dT%H:%M:%SZ') + "," + ward.lower() + '\n')
                 else:
-                    fp_status.write("start," + start_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%d %H:%M:%SZ') + "," + ward.lower() + '\n')
-                fp_status.write("stop," + stop_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%d %H:%M:%SZ') + "," + ward.lower() + '\n')
+                    fp_status.write("start," + start_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%dT%H:%M:%SZ') + "," + ward.lower() + '\n')
+                fp_status.write("stop," + stop_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%dT%H:%M:%SZ') + "," + ward.lower() + '\n')
     except:
         #print(traceback.format_exc())
         print("Failed to update status file - " + update_type)

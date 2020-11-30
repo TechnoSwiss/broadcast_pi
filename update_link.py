@@ -59,7 +59,7 @@ def list_my_uploaded_videos(youtube, uploads_playlist_id):
             playlistitems_list_request, playlistitems_list_response)
     return video_list
 
-def update_live_broadcast_link(live_broadcast_id, args, filename = None):
+def update_live_broadcast_link(live_broadcast_id, args, path_filename = None, filename = None):
     if(args.host_name is None):
         print("Nothing to update.")
         return()
@@ -91,9 +91,9 @@ def update_live_broadcast_link(live_broadcast_id, args, filename = None):
                 ssh.connect(args.host_name, username=args.user_name, pkey=key)
                 with SCPClient(ssh.get_transport()) as scp:
                     if(filename is not None):
-                        scp.put('link.html', filename)
+                        scp.put('link.html', path_filename)
                     else:
-                        scp.put('link.html', 'public_html/broadcast/' + args.ward.lower() + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
+                        scp.put('link.html', 'public_html/broadcast/' + (filename if (filename is not None) else args.ward.lower()) + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
         except:
             #print(traceback.format_exc())
             print("SSH Host key failure.")
@@ -112,6 +112,7 @@ if __name__ == '__main__':
     parser.add_argument('-o','--host-name',type=str,help='The address for the web host to upload HTML link forward page to')
     parser.add_argument('-u','--user-name',type=str,help='The username for the web host')
     parser.add_argument('-D','--home-dir',type=str,help='Home directory SSH id_rsa key is stored under')
+    parser.add_argument('-U','--url-filename',type=str,help='Use this for web filename instead of Unit name.')
     parser.add_argument('-K','--html-filename',type=str,help='Override default upload path and filename, this must be full path and filename for target webserver')
     parser.add_argument('-k','--url-key',type=str,help='A 4-digit code added after the ward name at the end of the URL')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')

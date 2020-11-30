@@ -23,6 +23,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Insert Live Broadcast in YouTube Live list.')
     parser.add_argument('-w','--ward',type=str,required=True,help='Name of Ward being broadcast')
     parser.add_argument('-i','--title',type=str,default='Live Stream',help='Broadcast Title')
+    parser.add_argument('-S','--status-file',type=str,help='Path and fineame for file used to write out Start/Stop time status.')
     parser.add_argument('-n','--thumbnail',type=str,default='thumbnail.jpg',help='Path and filename for the JPG image that will be the video thumbnail')
     parser.add_argument('-o','--host-name',type=str,help='The address for the web host to upload HTML link forward page to')
     parser.add_argument('-u','--user-name',type=str,help='The username for the web host')
@@ -53,5 +54,8 @@ if __name__ == '__main__':
     if(current_id is None):
         print("Failed to insert new broadcast!")
     else:
+        # modified the status-file cli parameter so that it doesn't have a default values here, so we can decide if we want this to update the status file or not at runtime
+        if(args.status_file is not None):
+            update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
         #make sure link on web host is current
-        update_link.update_live_broadcast_link(current_id, args, args.html_filename)
+        update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)

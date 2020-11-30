@@ -68,7 +68,7 @@ def create_live_event(youtube, title, starttime, duration, thumbnail, ward, num_
         print("Failed to update Catagory")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to update new broadcast catagory!")
-        return(None)
+        #return(None) #failure at this point doesn't render the broadcast unsuable, so send error but continue
     
     if(thumbnail is not None and os.path.exists(thumbnail)):
         try:
@@ -81,7 +81,7 @@ def create_live_event(youtube, title, starttime, duration, thumbnail, ward, num_
             print("Failed to update Thumbnail")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed to update thumbnail!")
-            return(None)
+            #return(None) #failure at this point doesn't render the broadcast unsuable, so send error but continue
     return(videoID)
 
 # this is going to grab the closest broadcast scheduled based on the time this script gets run. Ideally if only this script is getting used to drive the broadcasts there will only be one broadcast returned, if multiple broadcasts are scheduled for the same time, this will return the first in the list which may not be what you want. The html page will get updated with this link, and assuming you bind the stream based on the ID returned here, everything should still be pointing at the same thing, but results might not be as expected. We would like to avoid including completed videos in this list however, because we can't send a stream out to them.
@@ -94,7 +94,7 @@ def get_next_broadcast(youtube, ward, num_from = None, num_to = None):
         ).execute()
     except:
         #print(traceback.format_exc())
-        print("Failed to get list of upcoming broadcasts")
+        print("Failed to get next broadcast")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get next broadcast!")
         return(None)
@@ -126,7 +126,7 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None):
         #print(traceback.format_exc())
         print("Failed to get list of broadcasts")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to get next broadcast!")
+            sms.send_sms(num_from, num_to, ward + " failed to get list of  broadcasts!")
         return(None)
 
     videos = {}
@@ -146,9 +146,9 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None)
 
     except:
         #print(traceback.format_exc())
-        print("Failed to get broadcasts status")
+        print("Failed to get broadcast status")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to get next broadcast!")
+            sms.send_sms(num_from, num_to, ward + " failed to get broadcast status!")
         return(None)
 
 # liveStream is the enpoint that ffmpeg is going to be sending the rtsp stream at, this is the target of the stream key from YouTube Studio, but for binding a broadcast we need to use the stream ID not the stream key
@@ -209,7 +209,7 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
     except:
         currentViewers = -1
         #print(traceback.format_exc())
-        print("Unable to get concurrent viewers")
+        print("Failed to get concurrent viewers")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get current viewers!")
 

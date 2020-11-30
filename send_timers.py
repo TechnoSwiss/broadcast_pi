@@ -31,9 +31,10 @@ if __name__ == '__main__':
     else:
         send_text += timers
 
-    send_text += '\nStart: ' + datetime.strftime(datetime.now(), '%H:%M:%S.%f')
+    start_ping = datetime.now()
     send_text += '\n\n' + check_output(['ping', '-c', '2', 'x.rtmp.youtube.com']).decode('utf-8')
-    send_text += '\nFinish: ' + datetime.strftime(datetime.now(), '%H:%M:%S.%f')
+    ping_delta = datetime.now() - start_ping
+    send_text += '\n' + str(ping_delta)
     if(args.num_from is not None and args.num_to is not None):
         print(send_text)
         sms.send_sms(args.num_from, args.num_to, send_text)

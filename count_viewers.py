@@ -17,11 +17,11 @@ def count_viewers(filename, youtube, videoID, ward, num_from = None, num_to = No
     try:
         with open(filename, 'w') as outFile:
             while True:
+                if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to) == "complete"):
+                    break
                 outputData = datetime.now().strftime("%m/%d/%Y %H:%M:%S,") + str(yt.get_concurrent_viewers(youtube, videoID, ward, num_from, num_to)) + '\n'
                 outFile.write(outputData)
                 outFile.flush()
-                if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to) == "complete"):
-                    break
                 time.sleep(30)
     except:
         #print(traceback.format_exc())

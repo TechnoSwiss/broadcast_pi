@@ -51,6 +51,7 @@ if __name__ == '__main__':
     parser.add_argument('-o','--host-name',type=str,help='The address for the web host to upload HTML link forward page to')
     parser.add_argument('-u','--user-name',type=str,help='The username for the web host')
     parser.add_argument('-D','--home-dir',type=str,help='Home directory SSH id_rsa key is stored under')
+    parser.add_argument('-U','--url-filename',type=str,help='Use this for web filename instead of Unit name.')
     parser.add_argument('-K','--html-filename',type=str,help='Override default upload path and filename, this must be full path and filename for target webserver')
     parser.add_argument('-k','--url-key',type=str,help='The 4-digit code at the end of the URL')
     parser.add_argument('-y','--youtube-key',type=str,required=True,help='YouTube Key')
@@ -101,7 +102,7 @@ if __name__ == '__main__':
             exit()
 
     #make sure link on web host is current
-    update_link.update_live_broadcast_link(current_id, args, args.html_filename)
+    update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
 
     #kick off broadcast
     ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + ' -f v4l2 -framerate 15 -video_size 1920x1080 -c:v h264 -i /dev/video2 -c:v libx264 -pix_fmt yuv420p -preset superfast -g 25 -b:v 3000k -maxrate 3000k -bufsize 1500k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -q:v 5 -q:a 5 -b:a 64k -af pan="mono: c0=FL" -ac 1 -filter:a "volume=' + str(args.audio_gain) + 'dB" -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
@@ -112,7 +113,7 @@ if __name__ == '__main__':
 #        exit()
     process = None
     streaming = False
-    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = ('viewers.csv', youtube, current_id, args.ward, args.num_from, args.num_to))
+    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (args.ward.lower() + '_viewers.csv', youtube, current_id, args.ward, args.num_from, args.num_to))
     count_viewers.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
     count_viewers.start()
     while(datetime.now() < stop_time):
@@ -124,11 +125,12 @@ if __name__ == '__main__':
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
             update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
             while process.poll() is None:
-                time.sleep(1)
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
                 if os.path.exists(args.control_file) or datetime.now() > stop_time:
                     process.terminate()
                     process.wait()
+                    break;
+                time.sleep(1)
             streaming = False
         elif(stream == 0 and streaming == False):
             streaming = True
@@ -136,27 +138,43 @@ if __name__ == '__main__':
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
             update_status.update("pause", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
             while process.poll() is None:
-                time.sleep(1)
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
                 if not os.path.exists(args.control_file) or datetime.now() > stop_time:
                     process.terminate()
                     process.wait()
+                    break;
+                time.sleep(1)
             streaming = False
 
         time.sleep(0.1)
 
     yt.stop_broadcast(youtube, current_id, args.ward, args.num_from, args.num_to)
+    # change status back to start so webpage isn't left thinking we're still broadcasting/paused
+    update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
+
+    #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
+    if os.path.exists(args.control_file):
+        os.remove(args.control_file)
 
     time.sleep(args.delay_after * 60) # wait for X min before deleting video
 
     if(args.email_from is not None and args.email_to is not None):
-        send_email.send_viewer_file('viewers.csv', args.email_from, args.email_to, args.ward)
+        send_email.send_viewer_file(args.ward.lower() + '_viewers.csv', args.email_from, args.email_to, args.ward)
 
-    # delete all completed videos in Live list
-    # delete all ready videos as they will cause problems for the new broadcast we will insert at the end of the script
-    for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to).items():
-        if(video_status == "complete" or video_status == "ready"):
-            youtube.videos().delete(id=video_id).execute()
+    try:
+        # delete the recording we just finished
+        youtube.videos().delete(id=current_id).execute()
+
+        # delete all completed videos in Live list
+        # delete all ready videos as they will cause problems for the new broadcast we will insert at the end of the script
+        for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to).items():
+            if(video_status == "complete" or video_status == "ready"):
+                youtube.videos().delete(id=video_id).execute()
+    except:
+        #print(traceback.format_exc())
+        print("Failed to delete broadcasts")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to delete broadcasts!")
 
     # create a broadcast endpoint for next weeks video
     start_time, stop_time = update_status.get_start_stop(datetime.strftime(start_time, '%H:%M:%S'), args.run_time, datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y'), args.num_from, args.num_to)
@@ -170,9 +188,9 @@ if __name__ == '__main__':
         if(args.num_from is not None and args.num_to is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " failed to create broadcast for next week!")
 
     # make sure link on web host is current
-    update_link.update_live_broadcast_link(current_id, args, args.html_filename)
+    update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
 
-    #clean up control file so it's reset for next broadcast
+    #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     if os.path.exists(args.control_file):
         os.remove(args.control_file)
 

@@ -3,6 +3,8 @@
 }
 
 #pauseResume, #extend {
+    padding: 0px;
+    text-align: center;
     display: block;
     position: relative;
     overflow: hidden;
@@ -38,6 +40,8 @@
 }
 
 #pauseResume::after {
+    display: block;
+    text-align: center;
     content: "Pause";
 }
 
