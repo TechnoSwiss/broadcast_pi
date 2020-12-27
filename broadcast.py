@@ -117,9 +117,16 @@ if __name__ == '__main__':
     count_viewers.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
     count_viewers.start()
     while(datetime.now() < stop_time):
-        stream = 0 if os.path.exists(args.control_file) else 1 # stream = 1 means we should be broadcasting the camera feed, stream = 0 means we should be broadcasting the title card "pausing" the video
+        try:
+            stream = 0 if os.path.exists(args.control_file) else 1 # stream = 1 means we should be broadcasting the camera feed, stream = 0 means we should be broadcasting the title card "pausing" the video
+        except:
+            print(traceback.format_exc())
+            print("Failure reading control file")
+            if(args.num_from is not None and args.num_to is not None):
+                sms.send_sms(args.num_from, args.num_to, ward + " had a failure reading the control file!")
 
         if(stream == 1 and streaming == False):
+          try:
             streaming = True
             process = subprocess.Popen(split(ffmpeg), shell=False, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
@@ -132,7 +139,13 @@ if __name__ == '__main__':
                     break;
                 time.sleep(1)
             streaming = False
+          except:
+            print(traceback.format_exc())
+            print("Live broadcast failure")
+            if(args.num_from is not None and args.num_to is not None):
+                sms.send_sms(args.num_from, args.num_to, ward + " had a live broadcast failure!")
         elif(stream == 0 and streaming == False):
+          try:
             streaming = True
             process = subprocess.Popen(split(ffmpeg_img), shell=False, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
@@ -145,6 +158,11 @@ if __name__ == '__main__':
                     break;
                 time.sleep(1)
             streaming = False
+          except:
+            print(traceback.format_exc())
+            print("Live broadcast failure pause")
+            if(args.num_from is not None and args.num_to is not None):
+                sms.send_sms(args.num_from, args.num_to, ward + " had a live broadcast failure while paused!")
 
         time.sleep(0.1)
 
@@ -173,8 +191,8 @@ if __name__ == '__main__':
     except:
         #print(traceback.format_exc())
         print("Failed to delete broadcasts")
-        if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to delete broadcasts!")
+        if(args.num_from is not None and args.num_to is not None):
+            sms.send_sms(args.num_from, args.num_to, ward + " failed to delete broadcasts!")
 
     # create a broadcast endpoint for next weeks video
     start_time, stop_time = update_status.get_start_stop(datetime.strftime(start_time, '%H:%M:%S'), args.run_time, datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y'), args.num_from, args.num_to)
