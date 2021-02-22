@@ -2,6 +2,8 @@ client_secret.json
 link.html
 *.auth
 *.pass
+*.pub
+*.pem
 jquery*.js
 
 # Byte-compiled / optimized / DLL files

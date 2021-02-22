@@ -14,7 +14,7 @@ import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
 import update_status # update_status.py local file
 
-def update(update_type, start_time, stop_time, status_file, ward, num_from = None, num_to = None):
+def update(update_type, start_time, stop_time, status_file, ward, num_from = None, num_to = None, verbose = False):
     # update_type should be one of the folllowing:
     # broadcast - updating the status because we're starting the broadcast
     # start - updating the status because we're creating an even in the future
@@ -44,12 +44,12 @@ def update(update_type, start_time, stop_time, status_file, ward, num_from = Non
                     fp_status.write("start," + start_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%dT%H:%M:%SZ') + "," + ward.lower() + '\n')
                 fp_status.write("stop," + stop_time.replace(tzinfo=tz.tzlocal()).astimezone(tz.tzutc()).strftime('%Y-%m-%dT%H:%M:%SZ') + "," + ward.lower() + '\n')
     except:
-        #print(traceback.format_exc())
+        if(verbose): print(traceback.format_exc())
         print("Failed to update status file - " + update_type)
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to update status file " + update_type + "!")
 
-def get_start_stop(start_time, duration, start_date = None, num_from = None, num_to = None):
+def get_start_stop(start_time, duration, start_date = None, num_from = None, num_to = None, verbose = False):
     #stop_time = None
     try:
         if(start_date is not None):
@@ -60,14 +60,12 @@ def get_start_stop(start_time, duration, start_date = None, num_from = None, num
             start_time = datetime.strptime(start_date + start_time, '%m/%d/%y %H:%M:%S')
         else:
             start_time = datetime.now()
-            start_time = start_time - timedelta(minutes=start_time.minute % 5,
-                                                seconds=start_time.second,
-                                                microseconds=start_time.microsecond)
+            start_time = start_time - timedelta(seconds=start_time.second, microseconds=start_time.microsecond) + timedelta(minutes=1) # we had been rounding down to the nearest 5 min., but that cause problems now that we are inserting YT broadcasts and including the start and run-time, because YT won't let you add events in the past.
 
         H, M, S = duration.split(':')
         stop_time = start_time + timedelta(hours=int(H), minutes=int(M),seconds=int(S))
     except:
-        #print(traceback.format_exc())
+        if(verbose): print(traceback.format_exc())
         print("Error getting start/stop times")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " error getting start/stop times!")
@@ -83,9 +81,10 @@ if __name__ == '__main__':
     parser.add_argument('-C','--start-date',type=str,help='Broadcast run date in MM/DD/YY, use for setting up future broadcasts')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date)
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date, args.num_from, args.num_to, args.verbose)
 
-    update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
+    update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
     

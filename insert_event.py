@@ -10,12 +10,12 @@ import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
 import update_status # update_status.py localfile
 
-def insert_event(youtube, title, start_time, run_time, thumbnail, ward, num_from = None, num_to = None):
-    current_id = yt.create_live_event(youtube, title, start_time, run_time, thumbnail, ward, num_from, num_to)
+def insert_event(youtube, title, start_time, run_time, thumbnail, ward, num_from = None, num_to = None, verbose = False):
+    current_id = yt.create_live_event(youtube, title, start_time, run_time, thumbnail, ward, num_from, num_to, verbose)
 
-    stream_id = yt.get_stream(youtube, ward, num_from, num_to)
+    stream_id = yt.get_stream(youtube, ward, num_from, num_to, verbose)
 
-    yt.bind_broadcast(youtube, current_id, stream_id, ward, num_from, num_to)
+    yt.bind_broadcast(youtube, current_id, stream_id, ward, num_from, num_to, verbose)
 
     return(current_id)
 
@@ -36,27 +36,28 @@ if __name__ == '__main__':
     parser.add_argument('-A','--start-date',type=str,help='Broadcast run date in MM/DD/YY, use for setting up future broadcasts')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
     credentials_file = args.ward.lower() + '.auth'
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date)
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date, args.num_from, args.num_to, args.verbose)
 
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)
 
     # any existing videos in the ready state are going to cause problems for the newly inserted video (because we bind the stream at the same time) so delete and videos in the ready state before inserting a new one
-    for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to).items():
+    for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to, args.verbose).items():
         if(video_status == "ready"):
             youtube.videos().delete(id=video_id).execute()
 
-    current_id = insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to)
+    current_id = insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
 
     if(current_id is None):
         print("Failed to insert new broadcast!")
     else:
         # modified the status-file cli parameter so that it doesn't have a default values here, so we can decide if we want this to update the status file or not at runtime
         if(args.status_file is not None):
-            update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
+            update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
         #make sure link on web host is current
         update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)

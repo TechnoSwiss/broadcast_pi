@@ -28,6 +28,7 @@ if os.path.exists(TWILIO_AUTH):
            account_sid = f.readline().replace('\n', '')
            auth_token = f.readline().replace('\n', '')
     except:
+        #print(traceback.format_exc())
         print("SMS Account Auth File Read Failure")
         exit()
 
@@ -45,6 +46,7 @@ if __name__ == '__main__':
     parser.add_argument('-m','--message',type=str,required=True,help="Message text")
     parser.add_argument('-F','--num-from',type=str,required=True,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,required=True,help='SMS number to send notification to')
+    parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
   
     send_sms(args.num_from, args.num_to, args.message)

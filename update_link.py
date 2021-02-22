@@ -59,9 +59,13 @@ def list_my_uploaded_videos(youtube, uploads_playlist_id):
             playlistitems_list_request, playlistitems_list_response)
     return video_list
 
-def update_live_broadcast_link(live_broadcast_id, args, path_filename = None, filename = None):
+def update_live_broadcast_link(live_broadcast_id, args, path_filename = None, filename = None, verbose = False):
     if(args.host_name is None):
         print("Nothing to update.")
+        return()
+
+    if(live_broadcast_id is None):
+        print("No BroadcastID, can't update.")
         return()
 
     link_file = open('link.html', 'w')
@@ -90,12 +94,12 @@ def update_live_broadcast_link(live_broadcast_id, args, path_filename = None, fi
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                 ssh.connect(args.host_name, username=args.user_name, pkey=key)
                 with SCPClient(ssh.get_transport()) as scp:
-                    if(filename is not None):
+                    if(path_filename is not None):
                         scp.put('link.html', path_filename)
                     else:
                         scp.put('link.html', 'public_html/broadcast/' + (filename if (filename is not None) else args.ward.lower()) + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
         except:
-            #print(traceback.format_exc())
+            if(verbose): print(traceback.format_exc())
             print("SSH Host key failure.")
             if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward +  " Ward stake website host key failure!")
             exit()
@@ -117,6 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('-k','--url-key',type=str,help='A 4-digit code added after the ward name at the end of the URL')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
  
     if(args.host_name is not None or args.user_name is not None or args.home_dir is not None):

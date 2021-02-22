@@ -15,6 +15,7 @@ if __name__ == '__main__':
     parser.add_argument('-w','--wards',type=str,help='Comma delimited list of wards used to filter timers list.')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
     timers = check_output(['systemctl', 'list-timers']).decode('utf-8')

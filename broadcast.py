@@ -35,7 +35,7 @@ def check_extend(extend_file, stop_time, status_file, ward, num_from = None, num
         os.remove(extend_file)
         if(args.extend_max is None or extend_time <= args.extend_max):
             stop_time = stop_time + timedelta(minutes=5)
-            update_status.update("stop", None, stop_time, status_file, ward, num_from, num_to)
+            update_status.update("stop", None, stop_time, status_file, ward, num_from, num_to, args.verbose)
     return(stop_time)
 
 if __name__ == '__main__':
@@ -62,13 +62,20 @@ if __name__ == '__main__':
     parser.add_argument('-d','--delay-after',type=int,default=10,help='Number of min. after broadcast to wait before cleaning up videos.')
     parser.add_argument('-e','--email-from',type=str,help='Account to send email with/from')
     parser.add_argument('-E','--email-to',type=str,help='Accoun tto send CSV fiel email to')
+    parser.add_argument('-M','--dkim-private-key',type=str,help='Full path and filename of DKIM private key file')
+    parser.add_argument('-m','--dkim-selector',type=str,help='DKIM Domain Selector')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
+
+    delete_current = True # in keeping with guidence not to record sessions, delete the current session
+    delete_ready = True # script will create a new broadcast endpoint after the delete process, and existing ready broadcasts will interfere since we're not creating seperate endpoints for each broadcast, so delete any ready broadcasts to prevent problems
+    delete_complete = True # in most cases there shouldn't be any completed broadcasts (they should have gotten deleted at the end of the broadcast), however some units are uploading broadcasts that we may want to save so this could be switched to False
 
     extend_time = 0 # keep track of extend time so we can cap it if needed
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time)
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.num_from, args.num_to, args.verbose)
 
     if not os.path.exists(args.pause_image):
         if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " no pause image available!")
@@ -92,13 +99,13 @@ if __name__ == '__main__':
     youtube = google_auth.get_authenticated_service(credentials_file, args)
   
     #get next closest broadcast endpoint from youtube (should only be one)
-    current_id = yt.get_next_broadcast(youtube, args.ward, args.num_from, args.num_to)
+    current_id = yt.get_next_broadcast(youtube, args.ward, args.num_from, args.num_to, args.verbose)
     if(current_id is None):
         print("No broadcast found, attempting to create broadcast.")
-        current_id = insert_event.insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to)
+        current_id = insert_event.insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
         if(current_id is None):
-            print("Failed to get current broadcast, and broadcast creation also failed:.")
-            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube Failed to get list of videos!")
+            print("Failed to get current broadcast, and broadcast creation also failed!")
+            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward failed to get current broadcast, and broadcast creation also failed!")
             exit()
 
     #make sure link on web host is current
@@ -113,24 +120,30 @@ if __name__ == '__main__':
 #        exit()
     process = None
     streaming = False
-    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (args.ward.lower() + '_viewers.csv', youtube, current_id, args.ward, args.num_from, args.num_to))
+    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (args.ward.lower() + '_viewers.csv', youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose))
     count_viewers.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
     count_viewers.start()
+    if(datetime.now() >= stop_time):
+        print("Stop time is less than start time!")
+        if(args.num_from is not None and args.num_to is not None):
+            sms.send_sms(args.num_from, args.num_to, ward + " stop time is less than start time!")
+    print("Starting stream...")
     while(datetime.now() < stop_time):
         try:
             stream = 0 if os.path.exists(args.control_file) else 1 # stream = 1 means we should be broadcasting the camera feed, stream = 0 means we should be broadcasting the title card "pausing" the video
         except:
-            print(traceback.format_exc())
+            if(args.verbose): print(traceback.format_exc())
             print("Failure reading control file")
             if(args.num_from is not None and args.num_to is not None):
                 sms.send_sms(args.num_from, args.num_to, ward + " had a failure reading the control file!")
 
         if(stream == 1 and streaming == False):
           try:
+            print("main stream")
             streaming = True
             process = subprocess.Popen(split(ffmpeg), shell=False, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-            update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
+            update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
             while process.poll() is None:
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
                 if os.path.exists(args.control_file) or datetime.now() > stop_time:
@@ -140,16 +153,17 @@ if __name__ == '__main__':
                 time.sleep(1)
             streaming = False
           except:
-            print(traceback.format_exc())
+            if(args.verbose): print(traceback.format_exc())
             print("Live broadcast failure")
             if(args.num_from is not None and args.num_to is not None):
                 sms.send_sms(args.num_from, args.num_to, ward + " had a live broadcast failure!")
         elif(stream == 0 and streaming == False):
           try:
+            print("pause stream")
             streaming = True
             process = subprocess.Popen(split(ffmpeg_img), shell=False, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-            update_status.update("pause", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
+            update_status.update("pause", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
             while process.poll() is None:
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
                 if not os.path.exists(args.control_file) or datetime.now() > stop_time:
@@ -159,16 +173,18 @@ if __name__ == '__main__':
                 time.sleep(1)
             streaming = False
           except:
-            print(traceback.format_exc())
+            if(args.verbose): print(traceback.format_exc())
             print("Live broadcast failure pause")
             if(args.num_from is not None and args.num_to is not None):
                 sms.send_sms(args.num_from, args.num_to, ward + " had a live broadcast failure while paused!")
 
         time.sleep(0.1)
 
-    yt.stop_broadcast(youtube, current_id, args.ward, args.num_from, args.num_to)
+    print("Finished stream...")
+
+    yt.stop_broadcast(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose)
     # change status back to start so webpage isn't left thinking we're still broadcasting/paused
-    update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
+    update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     if os.path.exists(args.control_file):
@@ -176,30 +192,34 @@ if __name__ == '__main__':
 
     time.sleep(args.delay_after * 60) # wait for X min before deleting video
 
+    print("e-mail concurrent viewer file")
     if(args.email_from is not None and args.email_to is not None):
-        send_email.send_viewer_file(args.ward.lower() + '_viewers.csv', args.email_from, args.email_to, args.ward)
+        send_email.send_viewer_file(args.ward.lower() + '_viewers.csv', args.email_from, args.email_to, args.ward, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
 
+    print("Delete broadcast(s)")
     try:
         # delete the recording we just finished
-        youtube.videos().delete(id=current_id).execute()
+        if(delete_current): youtube.videos().delete(id=current_id).execute()
 
         # delete all completed videos in Live list
         # delete all ready videos as they will cause problems for the new broadcast we will insert at the end of the script
-        for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to).items():
-            if(video_status == "complete" or video_status == "ready"):
+        for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to, args.verbose).items():
+            if((delete_complete and video_status == "complete")
+                or (delete_ready and video_status == "ready")):
                 youtube.videos().delete(id=video_id).execute()
     except:
-        #print(traceback.format_exc())
+        if(args.verbose): print(traceback.format_exc())
         print("Failed to delete broadcasts")
         if(args.num_from is not None and args.num_to is not None):
             sms.send_sms(args.num_from, args.num_to, ward + " failed to delete broadcasts!")
 
+    print("Create next weeks broadcast")
     # create a broadcast endpoint for next weeks video
-    start_time, stop_time = update_status.get_start_stop(datetime.strftime(start_time, '%H:%M:%S'), args.run_time, datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y'), args.num_from, args.num_to)
-    current_id = insert_event.insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to)
+    start_time, stop_time = update_status.get_start_stop(datetime.strftime(start_time, '%H:%M:%S'), args.run_time, datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y'), args.num_from, args.num_to, args.verbose)
+    current_id = insert_event.insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
 
  # update status file with next start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-    update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
+    update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
 
     if(current_id is None):
         print("Failed to create new broadcast for next week")

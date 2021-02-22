@@ -58,6 +58,7 @@ if __name__ == '__main__':
     parser.add_argument('-w','--ward',type=str,required=True,help="Name of Ward storing authentication for")
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
   
     credentials_file = args.ward.lower() + '.auth'
