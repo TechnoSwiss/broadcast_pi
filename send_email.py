@@ -92,7 +92,8 @@ if __name__ == '__main__':
     parser.add_argument('-m','--dkim-selector',type=str,help='DKIM Domain Selector')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('-V','--viewers-file',type=str,default='viewers.csv',help='Filename for Viewers file to send via email')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    send_viewer_file('viewers.csv', args.email_from, args.email_to, args.ward, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+    send_viewer_file(args.viewers_file, args.email_from, args.email_to, args.ward, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
