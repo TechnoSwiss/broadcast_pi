@@ -41,7 +41,7 @@ if __name__ == '__main__':
 
     credentials_file = args.ward.lower() + '.auth'
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date, args.num_from, args.num_to, args.verbose)
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date, args.ward, args.num_from, args.num_to, args.verbose)
 
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)

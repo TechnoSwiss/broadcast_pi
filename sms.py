@@ -34,12 +34,16 @@ if os.path.exists(TWILIO_AUTH):
 
 client = Client(account_sid, auth_token)
 
-def send_sms(num_from, num_to, sms_message):
-    message = client.messages.create(
-                     body=sms_message,
-                     from_=num_from,
-                     to=num_to
-                 )
+def send_sms(num_from, num_to, sms_message, verbose = False):
+    try:
+        message = client.messages.create(
+                         body=sms_message,
+                         from_=num_from,
+                         to=num_to
+                     )
+    except:
+        if(args.verbose): print(traceback.format_exc())
+        print("SMS Account Auth File Read Failure")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Send SMS Message')

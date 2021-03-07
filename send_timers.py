@@ -19,7 +19,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     timers = check_output(['systemctl', 'list-timers']).decode('utf-8')
-    send_text = 'System: ' + args.pc_name + '\n\n'
+    temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1]
+    send_text = 'System: ' + args.pc_name + ', temperature is: ' + temp + '\n\n'
 
     if(args.wards is not None):
         timers = timers.splitlines(keepends=True)
@@ -35,10 +36,15 @@ if __name__ == '__main__':
     start_ping = datetime.now()
     send_text += '\n\n' + check_output(['ping', '-c', '2', 'x.rtmp.youtube.com']).decode('utf-8')
     ping_delta = datetime.now() - start_ping
-    send_text += '\n' + str(ping_delta)
+    send_text += '\nTotal ping time w/ resolve: ' + str(ping_delta) + '\n\n'
+    bandwidth = check_output(['speedtest']).decode('utf-8').splitlines(keepends=True)
+    for line in bandwidth:
+        if(':' in line and 'URL' not in line):
+            send_text += line
+
     if(args.num_from is not None and args.num_to is not None):
         print(send_text)
-        sms.send_sms(args.num_from, args.num_to, send_text)
+        sms.send_sms(args.num_from, args.num_to, send_text, args.verbose)
     else:
         print(send_text)
         print("No numbers given, nothing to send")

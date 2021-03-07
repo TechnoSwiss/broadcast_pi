@@ -27,7 +27,7 @@ def count_viewers(filename, youtube, videoID, ward, num_from = None, num_to = No
         if(verbose): print(traceback.format_exc())
         print("Error attempting to write viewers file")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to write current viewers!")
+            sms.send_sms(num_from, num_to, ward + " failed to write current viewers!", verbose)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Save YouTube viewer numbers to file, every 30 seconds.')

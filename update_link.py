@@ -101,10 +101,10 @@ def update_live_broadcast_link(live_broadcast_id, args, path_filename = None, fi
         except:
             if(verbose): print(traceback.format_exc())
             print("SSH Host key failure.")
-            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward +  " Ward stake website host key failure!")
+            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward +  " Ward stake website host key failure!", verbose)
             exit()
     else:
-        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube SSH Key and Password files are required!")
+        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube SSH Key and Password files are required!", verbose)
         print("SSH Key or Password file is missing for link upload.")
         exit()
     

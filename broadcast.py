@@ -75,10 +75,10 @@ if __name__ == '__main__':
 
     extend_time = 0 # keep track of extend time so we can cap it if needed
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.num_from, args.num_to, args.verbose)
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, args.ward, args.num_from, args.num_to, args.verbose)
 
     if not os.path.exists(args.pause_image):
-        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " no pause image available!")
+        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " no pause image available!", args.verbose)
         print("Pause image not found, image is required for paused stream.")
         exit()
 
@@ -105,7 +105,7 @@ if __name__ == '__main__':
         current_id = insert_event.insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
         if(current_id is None):
             print("Failed to get current broadcast, and broadcast creation also failed!")
-            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward failed to get current broadcast, and broadcast creation also failed!")
+            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward failed to get current broadcast, and broadcast creation also failed!", args.verbose)
             exit()
 
     #make sure link on web host is current
@@ -126,7 +126,7 @@ if __name__ == '__main__':
     if(datetime.now() >= stop_time):
         print("Stop time is less than start time!")
         if(args.num_from is not None and args.num_to is not None):
-            sms.send_sms(args.num_from, args.num_to, ward + " stop time is less than start time!")
+            sms.send_sms(args.num_from, args.num_to, args.ward + " stop time is less than start time!", args.verbose)
     print("Starting stream...")
     while(datetime.now() < stop_time):
         try:
@@ -135,7 +135,7 @@ if __name__ == '__main__':
             if(args.verbose): print(traceback.format_exc())
             print("Failure reading control file")
             if(args.num_from is not None and args.num_to is not None):
-                sms.send_sms(args.num_from, args.num_to, ward + " had a failure reading the control file!")
+                sms.send_sms(args.num_from, args.num_to, args.ward + " had a failure reading the control file!", args.verbose)
 
         if(stream == 1 and streaming == False):
           try:
@@ -156,7 +156,7 @@ if __name__ == '__main__':
             if(args.verbose): print(traceback.format_exc())
             print("Live broadcast failure")
             if(args.num_from is not None and args.num_to is not None):
-                sms.send_sms(args.num_from, args.num_to, ward + " had a live broadcast failure!")
+                sms.send_sms(args.num_from, args.num_to, args.ward + " had a live broadcast failure!", args.verbose)
         elif(stream == 0 and streaming == False):
           try:
             print("pause stream")
@@ -176,7 +176,7 @@ if __name__ == '__main__':
             if(args.verbose): print(traceback.format_exc())
             print("Live broadcast failure pause")
             if(args.num_from is not None and args.num_to is not None):
-                sms.send_sms(args.num_from, args.num_to, ward + " had a live broadcast failure while paused!")
+                sms.send_sms(args.num_from, args.num_to, args.ward + " had a live broadcast failure while paused!", args.verbose)
 
         time.sleep(0.1)
 
@@ -211,11 +211,11 @@ if __name__ == '__main__':
         if(args.verbose): print(traceback.format_exc())
         print("Failed to delete broadcasts")
         if(args.num_from is not None and args.num_to is not None):
-            sms.send_sms(args.num_from, args.num_to, ward + " failed to delete broadcasts!")
+            sms.send_sms(args.num_from, args.num_to, args.ward + " failed to delete broadcasts!", args.verbose)
 
     print("Create next weeks broadcast")
     # create a broadcast endpoint for next weeks video
-    start_time, stop_time = update_status.get_start_stop(datetime.strftime(start_time, '%H:%M:%S'), args.run_time, datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y'), args.num_from, args.num_to, args.verbose)
+    start_time, stop_time = update_status.get_start_stop(datetime.strftime(start_time, '%H:%M:%S'), args.run_time, datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y'), args.ward, args.num_from, args.num_to, args.verbose)
     current_id = insert_event.insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
 
  # update status file with next start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
@@ -223,7 +223,7 @@ if __name__ == '__main__':
 
     if(current_id is None):
         print("Failed to create new broadcast for next week")
-        if(args.num_from is not None and args.num_to is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " failed to create broadcast for next week!")
+        if(args.num_from is not None and args.num_to is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " failed to create broadcast for next week!", args.verbose)
 
     # make sure link on web host is current
     update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)

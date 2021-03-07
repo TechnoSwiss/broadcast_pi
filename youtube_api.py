@@ -34,8 +34,8 @@ def create_live_event(youtube, title, starttime, duration, thumbnail, ward, num_
               },
               "snippet": {
                 "title": title,
-                "scheduledStartTime": starttime.strftime('%Y-%m-%d %H:%M:%SZ'),
-                "scheduledEndTime": endtime.strftime('%Y-%m-%d %H:%M:%SZ'),
+                "scheduledStartTime": starttime.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                "scheduledEndTime": endtime.strftime('%Y-%m-%dT%H:%M:%SZ'),
               },
               "status": {
                 "privacyStatus": "unlisted",
@@ -47,7 +47,7 @@ def create_live_event(youtube, title, starttime, duration, thumbnail, ward, num_
         if(verbose): print(traceback.format_exc())
         print("Failed to insert new Broadcast")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to insert new broadcast!")
+            sms.send_sms(num_from, num_to, ward + " failed to insert new broadcast!", verbose)
         return(None)
 
     videoID = insert_broadcast['id']
@@ -67,7 +67,7 @@ def create_live_event(youtube, title, starttime, duration, thumbnail, ward, num_
         if(verbose): print(traceback.format_exc())
         print("Failed to update Catagory")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to update new broadcast catagory!")
+            sms.send_sms(num_from, num_to, ward + " failed to update new broadcast catagory!", verbose)
         #return(None) #failure at this point doesn't render the broadcast unsuable, so send error but continue
     
     if(thumbnail is not None and os.path.exists(thumbnail)):
@@ -80,7 +80,7 @@ def create_live_event(youtube, title, starttime, duration, thumbnail, ward, num_
             if(verbose): print(traceback.format_exc())
             print("Failed to update Thumbnail")
             if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, ward + " failed to update thumbnail!")
+                sms.send_sms(num_from, num_to, ward + " failed to update thumbnail!", verbose)
             #return(None) #failure at this point doesn't render the broadcast unsuable, so send error but continue
     return(videoID)
 
@@ -96,7 +96,7 @@ def get_next_broadcast(youtube, ward, num_from = None, num_to = None, verbose = 
         if(verbose): print(traceback.format_exc())
         print("Failed to get next broadcast")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to get next broadcast!")
+            sms.send_sms(num_from, num_to, ward + " failed to get next broadcast!", verbose)
         return(None)
 
     videos = {}
@@ -126,7 +126,7 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
         if(verbose): print(traceback.format_exc())
         print("Failed to get list of broadcasts")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to get list of  broadcasts!")
+            sms.send_sms(num_from, num_to, ward + " failed to get list of  broadcasts!", verbose)
         return(None)
 
     videos = {}
@@ -148,7 +148,7 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None,
         if(verbose): print(traceback.format_exc())
         print("Failed to get broadcast status")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to get broadcast status!")
+            sms.send_sms(num_from, num_to, ward + " failed to get broadcast status!", verbose)
         return(None)
 
 # liveStream is the enpoint that ffmpeg is going to be sending the rtsp stream at, this is the target of the stream key from YouTube Studio, but for binding a broadcast we need to use the stream ID not the stream key
@@ -162,12 +162,18 @@ def get_stream(youtube, ward, num_from = None, num_to = None, verbose = False):
         if(verbose): print(traceback.format_exc())
         print("Failed to get Stream")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to get stream!")
+            sms.send_sms(num_from, num_to, ward + " failed to get stream!", verbose)
         return(None)
     return(getStream['items'][0]['id'])
 
 # after we've created a broadcast it will not be ready to receive the stream until we bind a stream to the broadcast. This is done automatically when we open the broadcast in YouTube studio, but to automate it we need to bind it here
 def bind_broadcast(youtube, videoID, streamID, ward, num_from = None, num_to = None, verbose = False):
+    if(videoID is None):
+        print("Missing videoID, can't perform bind")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " missing videoID, can't perform bind!", verbose)
+        return()
+
     try:
         bindBroadcast = youtube.liveBroadcasts().bind(
             id=videoID,
@@ -178,7 +184,7 @@ def bind_broadcast(youtube, videoID, streamID, ward, num_from = None, num_to = N
         if(verbose): print(traceback.format_exc())
         print("Failed to bind broadcasts")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to bind broadcast!")
+            sms.send_sms(num_from, num_to, ward + " failed to bind broadcast!", verbose)
 
 # AutoStop is being disabled so that if the stream has problems (like the internet drops for a minute) YouTube won't automatically close out the video. This does mean that we have to manualy close it out when we're done with the broadcast/
 def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
@@ -193,7 +199,7 @@ def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbo
         if(verbose): print(traceback.format_exc())
         print("Failed to stop Broadcast")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to stop broadcast!")
+            sms.send_sms(num_from, num_to, ward + " failed to stop broadcast!", verbose)
 
 # Gets the current number of viewers of the video specified by videoID, so those numbers can be reported out
 def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
@@ -217,7 +223,7 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
             if(verbose): print(traceback.format_exc())
             print("Failed to get concurrent viewers")
             if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!")
+                sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!", verbose)
 
     return(currentViewers)
 

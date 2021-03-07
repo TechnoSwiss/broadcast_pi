@@ -47,10 +47,9 @@ def update(update_type, start_time, stop_time, status_file, ward, num_from = Non
         if(verbose): print(traceback.format_exc())
         print("Failed to update status file - " + update_type)
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to update status file " + update_type + "!")
+            sms.send_sms(num_from, num_to, ward + " failed to update status file " + update_type + "!", verbose)
 
-def get_start_stop(start_time, duration, start_date = None, num_from = None, num_to = None, verbose = False):
-    #stop_time = None
+def get_start_stop(start_time, duration, start_date = None, ward=None, num_from = None, num_to = None, verbose = False):
     try:
         if(start_date is not None):
             start_date = start_date + ' '
@@ -68,7 +67,7 @@ def get_start_stop(start_time, duration, start_date = None, num_from = None, num
         if(verbose): print(traceback.format_exc())
         print("Error getting start/stop times")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " error getting start/stop times!")
+            sms.send_sms(num_from, num_to, ward + " error getting start/stop times!", verbose)
 
     return start_time, stop_time
 
@@ -84,7 +83,7 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date, args.num_from, args.num_to, args.verbose)
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date, args.ward, args.num_from, args.num_to, args.verbose)
 
     update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
     
