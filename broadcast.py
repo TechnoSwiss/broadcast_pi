@@ -206,7 +206,8 @@ if __name__ == '__main__':
         for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to, args.verbose).items():
             if((delete_complete and video_status == "complete")
                 or (delete_ready and video_status == "ready")):
-                youtube.videos().delete(id=video_id).execute()
+                if(video_id != current_id): # if current_id is still in list, then we've skipped deleting it above, so don't delete now.
+                    youtube.videos().delete(id=video_id).execute()
     except:
         if(args.verbose): print(traceback.format_exc())
         print("Failed to delete broadcasts")

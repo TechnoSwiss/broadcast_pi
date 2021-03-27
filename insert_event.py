@@ -13,7 +13,7 @@ import update_status # update_status.py localfile
 def insert_event(youtube, title, start_time, run_time, thumbnail, ward, num_from = None, num_to = None, verbose = False):
     current_id = yt.create_live_event(youtube, title, start_time, run_time, thumbnail, ward, num_from, num_to, verbose)
 
-    stream_id = yt.get_stream(youtube, ward, num_from, num_to, verbose)
+    stream_id = yt.get_stream(youtube, ward, num_from, num_to, verbose) if args.stream == None else yt.get_stream(youtube, ward, num_from, num_to, verbose, args.stream)
 
     yt.bind_broadcast(youtube, current_id, stream_id, ward, num_from, num_to, verbose)
 
@@ -31,6 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('-U','--url-filename',type=str,help='Use this for web filename instead of Unit name.')
     parser.add_argument('-K','--html-filename',type=str,help='Override default upload path and filename, this must be full path and filename for target webserver')
     parser.add_argument('-k','--url-key',type=str,help='The 4-digit code at the end of the URL')
+    parser.add_argument('-z','--stream',type=int,help='The stream number to attached to this event, use for multiple concurent broadcasts.')
     parser.add_argument('-s','--start-time',type=str,help='Broadcast start time in HH:MM:SS')
     parser.add_argument('-t','--run-time',type=str,default='1:10:00',help='Broadcast run time in HH:MM:SS')
     parser.add_argument('-A','--start-date',type=str,help='Broadcast run date in MM/DD/YY, use for setting up future broadcasts')
@@ -46,10 +47,11 @@ if __name__ == '__main__':
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)
 
-    # any existing videos in the ready state are going to cause problems for the newly inserted video (because we bind the stream at the same time) so delete and videos in the ready state before inserting a new one
-    for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to, args.verbose).items():
-        if(video_status == "ready"):
-            youtube.videos().delete(id=video_id).execute()
+    # any existing videos in the ready state are going to cause problems for the newly inserted video (because we bind the stream at the same time) so delete and videos in the ready state before inserting a new one, for single stream for multi stream we can leave them
+    if(args.stream == None):
+        for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to, args.verbose).items():
+            if(video_status == "ready"):
+                youtube.videos().delete(id=video_id).execute()
 
     current_id = insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
 

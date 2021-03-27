@@ -151,8 +151,34 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None,
             sms.send_sms(num_from, num_to, ward + " failed to get broadcast status!", verbose)
         return(None)
 
+def create_stream(youtube, ward, num_from = None, num_to = None, verbose = False, stream_name = 'Default'):
+    try:
+        getStream = youtube.liveStreams().insert(
+            part="snippet,contentDetails,cdn",
+            body={
+              "contentDetails": {
+                "isReusable": True,
+              },
+              "snippet": {
+                "title": stream_name,
+              },
+              "cdn": {
+                "frameRate": "30fps",
+                "resolution": "Variable",
+                "ingestionType": "rtmp",
+              }
+            }
+        ).execute()
+    except:
+        if(verbose): print(traceback.format_exc())
+        print("Failed to get Stream")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to get stream!", verbose)
+        return(None)
+    return(getStream['items'][0]['id'])
+
 # liveStream is the enpoint that ffmpeg is going to be sending the rtsp stream at, this is the target of the stream key from YouTube Studio, but for binding a broadcast we need to use the stream ID not the stream key
-def get_stream(youtube, ward, num_from = None, num_to = None, verbose = False):
+def get_stream(youtube, ward, num_from = None, num_to = None, verbose = False, stream_num = 0):
     try:
         getStream = youtube.liveStreams().list(
             part='id',
@@ -164,7 +190,15 @@ def get_stream(youtube, ward, num_from = None, num_to = None, verbose = False):
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get stream!", verbose)
         return(None)
-    return(getStream['items'][0]['id'])
+    #streams seem to be listed in reverse order of creation
+    #so the default stream always seems to be last, we're going to
+    #reverse the list order so the stream number matches the creation order
+    if(stream_num > (len(getStream['items']) -1) or stream_num < 0):
+        print("Invalid stream number requested")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " invalid stream number requested!", verbose)
+    getStream['items'].reverse()
+    return(getStream['items'][stream_num]['id'])
 
 # after we've created a broadcast it will not be ready to receive the stream until we bind a stream to the broadcast. This is done automatically when we open the broadcast in YouTube studio, but to automate it we need to bind it here
 def bind_broadcast(youtube, videoID, streamID, ward, num_from = None, num_to = None, verbose = False):
@@ -244,10 +278,12 @@ if __name__ == '__main__':
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)
 
+    #print(create_stream(youtube, args.ward))
+
     #create_live_event(youtube, args.title, starttime, args.run_time, args.thumbnail, args.ward)
     #print(get_next_broadcast(youtube, args.ward))
     #print(get_broadcasts(youtube, args.video_id, args.ward))
-    #print(get_stream(youtube, args.ward))
+    print(get_stream(youtube, args.ward))
     #bind_broadcast(youtube, args.video_id, "VY-K6BTl3Wjxg61zO9-s0A1599607954801518", args.ward)
     #start_broadcast(youtube, args.video_id, args.ward)
     #print(get_concurrent_viewers(youtube, args.video_id, args.ward))
