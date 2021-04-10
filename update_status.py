@@ -56,7 +56,10 @@ def get_start_stop(start_time, duration, start_date = None, ward=None, num_from 
         else:
             start_date = datetime.now().strftime('%m/%d/%y ')
         if(start_time is not None):
-            start_time = datetime.strptime(start_date + start_time, '%m/%d/%y %H:%M:%S')
+            try:
+                start_time = datetime.strptime(start_date + start_time, '%m/%d/%y %H:%M:%S')
+            except ValueError:
+                start_time = datetime.strptime(start_date + start_time, '%m/%d/%Y %H:%M:%S')
         else:
             start_time = datetime.now()
             start_time = start_time - timedelta(seconds=start_time.second, microseconds=start_time.microsecond) + timedelta(minutes=1) # we had been rounding down to the nearest 5 min., but that cause problems now that we are inserting YT broadcasts and including the start and run-time, because YT won't let you add events in the past.

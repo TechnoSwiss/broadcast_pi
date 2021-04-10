@@ -10,10 +10,10 @@ import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
 import update_status # update_status.py localfile
 
-def insert_event(youtube, title, start_time, run_time, thumbnail, ward, num_from = None, num_to = None, verbose = False):
+def insert_event(youtube, title, start_time, run_time, thumbnail, ward, num_from = None, num_to = None, verbose = False, stream = None):
     current_id = yt.create_live_event(youtube, title, start_time, run_time, thumbnail, ward, num_from, num_to, verbose)
 
-    stream_id = yt.get_stream(youtube, ward, num_from, num_to, verbose) if args.stream == None else yt.get_stream(youtube, ward, num_from, num_to, verbose, args.stream)
+    stream_id = yt.get_stream(youtube, ward, num_from, num_to, verbose) if stream == None else yt.get_stream(youtube, ward, num_from, num_to, verbose, stream)
 
     yt.bind_broadcast(youtube, current_id, stream_id, ward, num_from, num_to, verbose)
 

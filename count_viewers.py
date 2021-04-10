@@ -7,19 +7,23 @@ import time
 import threading
 
 from datetime import datetime, timedelta
+from subprocess import check_output
 
 import google_auth # google_auth.py local file
 import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
 import send_email # send_email.py localfile
 
-def count_viewers(filename, youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
+def count_viewers(filename, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False):
     try:
         with open(filename, 'w') as outFile:
             while True:
                 if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to, verbose) == "complete"):
                     break
-                outputData = datetime.now().strftime("%m/%d/%Y %H:%M:%S,") + str(yt.get_concurrent_viewers(youtube, videoID, ward, num_from, num_to, verbose)) + '\n'
+                if extended:
+                    temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1].rstrip()
+                    throttled = check_output(['vcgencmd', 'get_throttled']).decode('utf-8').split('=')[-1].rstrip()
+                outputData = datetime.now().strftime("%m/%d/%Y %H:%M:%S,") + str(yt.get_concurrent_viewers(youtube, videoID, ward, num_from, num_to, verbose)) + '\n' if not extended else ("," + temp + "," + throttled + '\n')
                 outFile.write(outputData)
                 outFile.flush()
                 time.sleep(30)
@@ -39,6 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('-m','--dkim-selector',type=str,help='DKIM Domain Selector')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('-N','--extended',default=False, action='store_true',help='Included extended data with viewer counts')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
@@ -47,7 +52,7 @@ if __name__ == '__main__':
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)
 
-    count = threading.Thread(target = count_viewers, args = ('viewers.csv', youtube, args.video_id, args.ward, args.num_from, args.num_to, args.verbose))
+    count = threading.Thread(target = count_viewers, args = ('viewers.csv', youtube, args.video_id, args.ward, args.num_from, args.num_to, args.verbose, args.extended))
     count.start()
     count.join()
 

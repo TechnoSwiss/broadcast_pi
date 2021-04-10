@@ -66,6 +66,7 @@ if __name__ == '__main__':
     parser.add_argument('-m','--dkim-selector',type=str,help='DKIM Domain Selector')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('-N','--extended',default=False, action='store_true',help='Included extended data with viewer counts')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
@@ -120,7 +121,7 @@ if __name__ == '__main__':
 #        exit()
     process = None
     streaming = False
-    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (args.ward.lower() + '_viewers.csv', youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose))
+    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (args.ward.lower() + '_viewers.csv', youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose, args.extended))
     count_viewers.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
     count_viewers.start()
     if(datetime.now() >= stop_time):
