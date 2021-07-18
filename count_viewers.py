@@ -23,7 +23,7 @@ def count_viewers(filename, youtube, videoID, ward, num_from = None, num_to = No
                 if extended:
                     temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1].rstrip()
                     throttled = check_output(['vcgencmd', 'get_throttled']).decode('utf-8').split('=')[-1].rstrip()
-                outputData = datetime.now().strftime("%m/%d/%Y %H:%M:%S,") + str(yt.get_concurrent_viewers(youtube, videoID, ward, num_from, num_to, verbose)) + '\n' if not extended else ("," + temp + "," + throttled + '\n')
+                outputData = datetime.now().strftime("%m/%d/%Y %H:%M:%S,") + str(yt.get_concurrent_viewers(youtube, videoID, ward, num_from, num_to, verbose)) + ('\n' if not extended else ("," + temp + "," + throttled + '\n'))
                 outFile.write(outputData)
                 outFile.flush()
                 time.sleep(30)

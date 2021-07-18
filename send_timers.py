@@ -34,13 +34,19 @@ if __name__ == '__main__':
         send_text += timers
 
     start_ping = datetime.now()
-    send_text += '\n\n' + check_output(['ping', '-c', '2', 'x.rtmp.youtube.com']).decode('utf-8')
+    try:
+        send_text += '\n\n' + check_output(['ping', '-c', '2', 'x.rtmp.youtube.com']).decode('utf-8')
+    except:
+        send_text += '\n\n !!! PING FAILED !!!'
     ping_delta = datetime.now() - start_ping
     send_text += '\nTotal ping time w/ resolve: ' + str(ping_delta) + '\n\n'
-    bandwidth = check_output(['speedtest']).decode('utf-8').splitlines(keepends=True)
-    for line in bandwidth:
-        if(':' in line and 'URL' not in line):
-            send_text += line
+    try:
+        bandwidth = check_output(['speedtest']).decode('utf-8').splitlines(keepends=True)
+        for line in bandwidth:
+            if(':' in line and 'URL' not in line):
+                send_text += line
+    except:
+            send_text += '\n\n !!! BANDWIDTH TEST FAILED !!!'
 
     if(args.num_from is not None and args.num_to is not None):
         print(send_text)

@@ -42,7 +42,7 @@ def send_sms(num_from, num_to, sms_message, verbose = False):
                          to=num_to
                      )
     except:
-        if(args.verbose): print(traceback.format_exc())
+        if(verbose): print(traceback.format_exc())
         print("SMS Account Auth File Read Failure")
 
 if __name__ == '__main__':
@@ -53,4 +53,4 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
   
-    send_sms(args.num_from, args.num_to, args.message)
+    send_sms(args.num_from, args.num_to, args.message, args.verbose)
