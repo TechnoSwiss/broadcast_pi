@@ -49,7 +49,7 @@ def update(update_type, start_time, stop_time, status_file, ward, num_from = Non
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to update status file " + update_type + "!", verbose)
 
-def get_start_stop(start_time, duration, start_date = None, ward=None, num_from = None, num_to = None, verbose = False):
+def get_start_stop(start_time, duration, start_date = None, ward = None, num_from = None, num_to = None, verbose = False):
     try:
         if(start_date is not None):
             start_date = start_date + ' '
@@ -57,15 +57,16 @@ def get_start_stop(start_time, duration, start_date = None, ward=None, num_from 
             start_date = datetime.now().strftime('%m/%d/%y ')
         if(start_time is not None):
             try:
-                start_time = datetime.strptime(start_date + start_time, '%m/%d/%y %H:%M:%S')
+                start_time = datetime.strptime(start_date + start_time, '%m/%d/%y %H:%M:%S') # this is a 2 digit year
             except ValueError:
-                start_time = datetime.strptime(start_date + start_time, '%m/%d/%Y %H:%M:%S')
+                start_time = datetime.strptime(start_date + start_time, '%m/%d/%Y %H:%M:%S') # this is a 4 digit year
         else:
             start_time = datetime.now()
             start_time = start_time - timedelta(seconds=start_time.second, microseconds=start_time.microsecond) + timedelta(minutes=1) # we had been rounding down to the nearest 5 min., but that cause problems now that we are inserting YT broadcasts and including the start and run-time, because YT won't let you add events in the past.
 
         H, M, S = duration.split(':')
         stop_time = start_time + timedelta(hours=int(H), minutes=int(M),seconds=int(S))
+
     except:
         if(verbose): print(traceback.format_exc())
         print("Error getting start/stop times")

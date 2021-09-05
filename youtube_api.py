@@ -116,17 +116,37 @@ def get_next_broadcast(youtube, ward, num_from = None, num_to = None, verbose = 
     else:
         return(None)
 
+def get_live_broadcast(youtube, ward, num_from = None, num_to = None, verbose = False):
+
+    videos = get_broadcasts(youtube, ward, num_from, num_to, verbose)
+    live_count = 0
+    for video in videos:
+        if(videos[video] == "live"):
+            live_id = video
+            live_count += 1
+
+    if(live_count > 1):
+        print("More than one live  broadcasts")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " more than one live broadcasts!", verbose)
+        return(None)
+
+    if(live_count == 1):
+        return(live_id)
+    else:
+        return(None)
+
 def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = False):
     try:
         list_broadcasts = youtube.liveBroadcasts().list(
             part='id,status',
-            mine=True
+            broadcastStatus='all',
         ).execute()
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed to get list of broadcasts")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to get list of  broadcasts!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed to get list of broadcasts!", verbose)
         return(None)
 
     videos = {}
@@ -282,8 +302,9 @@ if __name__ == '__main__':
 
     #create_live_event(youtube, args.title, starttime, args.run_time, args.thumbnail, args.ward)
     #print(get_next_broadcast(youtube, args.ward))
-    #print(get_broadcasts(youtube, args.video_id, args.ward))
-    print(get_stream(youtube, args.ward))
+    print(get_broadcasts(youtube, args.video_id, args.ward))
+    print(get_live_broadcast(youtube, args.ward))
+    #print(get_stream(youtube, args.ward))
     #bind_broadcast(youtube, args.video_id, "VY-K6BTl3Wjxg61zO9-s0A1599607954801518", args.ward)
     #start_broadcast(youtube, args.video_id, args.ward)
     #print(get_concurrent_viewers(youtube, args.video_id, args.ward))
