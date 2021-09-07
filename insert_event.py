@@ -10,14 +10,15 @@ import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
 import update_status # update_status.py localfile
 
-def insert_event(youtube, title, start_time, run_time, thumbnail, ward, num_from = None, num_to = None, verbose = False, stream = None):
-    current_id = yt.create_live_event(youtube, title, start_time, run_time, thumbnail, ward, num_from, num_to, verbose)
+def insert_event(youtube, title, description, start_time, run_time, thumbnail, ward, num_from = None, num_to = None, verbose = False):
+    current_id = yt.create_live_event(youtube, title, description, start_time, run_time, thumbnail, ward, num_from, num_to, verbose)
 
+    return(current_id)
+
+def bind_event(youtube, current_id, ward, num_from = None, num_to = None, verbose = False, stream = None):
     stream_id = yt.get_stream(youtube, ward, num_from, num_to, verbose) if stream == None else yt.get_stream(youtube, ward, num_from, num_to, verbose, stream)
 
     yt.bind_broadcast(youtube, current_id, stream_id, ward, num_from, num_to, verbose)
-
-    return(current_id)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Insert Live Broadcast in YouTube Live list.')
@@ -47,13 +48,21 @@ if __name__ == '__main__':
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)
 
-    # any existing videos in the ready state are going to cause problems for the newly inserted video (because we bind the stream at the same time) so delete and videos in the ready state before inserting a new one, for single stream for multi stream we can leave them
-    if(args.stream == None):
+    # normally we are only binding videos just before we're ready to send the 
+    # stream to them, this allows us to control which broadcast is getting the
+    # live stream, any videos in the ready state are already bound and can cause
+    # problems, so delete them, unless we're setting up multiple stream
+    # broadcasts, which are generally not automated and controlled manually
+    # from the YouTube Studio
+    if(args.stream is None):
         for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to, args.verbose).items():
-            if(video_status == "ready" or video_status == "created"):
+            if(video_status == "ready"):
                 youtube.videos().delete(id=video_id).execute()
 
-    current_id = insert_event(youtube, args.title, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
+    current_id = insert_event(youtube, args.title, None, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
+
+    if(args.stream is not None):
+        bind_event(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose, args.stream)
 
     if(current_id is None):
         print("Failed to insert new broadcast!")
