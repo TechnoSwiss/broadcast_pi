@@ -212,6 +212,20 @@ $(function () {
 	ajaxAction(action);
     });
 
+    $('html').on('click', '.preset', function () {
+        let preset = $(this).attr('name');
+
+        $.ajax(`http://` + window.location.hostname + `:8080/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&${preset}`)
+            .done(function (data) {
+                console.log(data);
+                setState(data.status);
+            })
+            .fail(function (jqxhr, err) {
+                console.log(`error ${err}`);
+            });
+        
+    });
+
     ajaxAction('status');
     let statusPoller = setInterval(function() {
 	ajaxAction('status');

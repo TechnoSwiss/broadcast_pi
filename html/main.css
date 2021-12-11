@@ -66,6 +66,28 @@
     content: "Resume";
 }
 
+#presets {
+    position: relative;
+    width: 40vmin;
+    left: 50%;
+    margin-left: -20vmin;
+}
+
+.preset {
+    font-size: 6vmin;
+    line-height: 6vmin;
+    float: left;
+/*    width: 8vmin;*/
+    height: 8vmin;
+    margin: 1vmin;
+    display: block;
+    border: 1vmin solid black;
+}
+
+.preset:active {
+    background-color: gray;
+}
+
 #title,
 .status {
     text-align: center;

@@ -94,20 +94,27 @@ if __name__ == '__main__':
     parser.add_argument('-k','--url-key',type=str,help='The 4-digit code at the end of the URL')
     parser.add_argument('-y','--youtube-key',type=str,required=True,help='YouTube Key')
     parser.add_argument('-a','--audio-delay',type=float,default=0.0,help='Audio Delay in Seconds (decimal)')
-    parser.add_argument('-g','--audio-gain',type=int,default=0,help='Audio Gain in dB (integer)')
+    parser.add_argument('-g','--audio-gain',type=int,help='Audio Gain in dB (integer)')
+    parser.add_argument('-G','--audio-gate',type=int,help='Audio Gate post-gain, can not be used with Audio Gain')
+    parser.add_argument('-R','--rtsp-stream',type=str,help='Use to specify an RTSP stream on the network to use instead of USB camera')
+    parser.add_argument('-P','--use-ptz',default=False,action='store_true',help='Use PTZ function on camera to set start/end/pause positions of camera')
     parser.add_argument('-s','--start-time',type=str,help='Broadcast start time in HH:MM:SS')
     parser.add_argument('-t','--run-time',type=str,default='1:10:00',help='Broadcast run time in HH:MM:SS')
     parser.add_argument('-d','--delay-after',type=int,default=10,help='Number of min. after broadcast to wait before cleaning up videos.')
     parser.add_argument('-e','--email-from',type=str,help='Account to send email with/from')
-    parser.add_argument('-E','--email-to',type=str,help='Accoun tto send CSV fiel email to')
+    parser.add_argument('-E','--email-to',type=str,help='Account to send CSV fiel email to')
     parser.add_argument('-M','--dkim-private-key',type=str,help='Full path and filename of DKIM private key file')
     parser.add_argument('-m','--dkim-selector',type=str,help='DKIM Domain Selector')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
-    parser.add_argument('-N','--extended',default=False, action='store_true',help='Include extended data with viewer counts')
+    parser.add_argument('-N','--extended',default=False,action='store_true',help='Include extended data with viewer counts')
     parser.add_argument('-D','--delete-control',type=int,help='Control delete options from command line, bit mapped. delete_current 1 : delete_ready 2 : delete_complete 4')
-    parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
+    parser.add_argument('-v','--verbose',default=False,action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
+
+    if(args.audio_gain is not None and args.audio_gate is not None):
+        print("!!Audio Gain and Audio Gate are mutually exclusive!!")
+        exit()
 
     killer = GracefulKiller()
 
@@ -123,7 +130,7 @@ if __name__ == '__main__':
             print("disable delete ready")
             delete_ready = False
         if(args.delete_control & 0x04):
-            print("disable delete control")
+            print("disable delete complete")
             delete_complete = False
 
     extend_time = 0 # keep track of extend time so we can cap it if needed
@@ -187,6 +194,19 @@ if __name__ == '__main__':
     else:
         audio_delay = " -itsoffset " + str(abs(args.audio_delay))
 
+    audio_parameters = ''
+    if(args.audio_gain is not None):
+        audio_parameters = ' -af "volume=' + str(args.audio_gain) + 'dB"'
+    if(args.audio_gate is not None):
+        audio_parameters = ' -filter_complex agate=makeup=' + str(args.audio_gate)
+
+    camera_parameters = ' -f v4l2 -framerate 15 -video_size 1920x1080 -c:v h264 -i /dev/video2'
+    if(args.rtsp_stream is not None): # we're going to use an RTSP stream instead of the USB camera
+        camera_parameters = ' -c:v h264 -rtsp_transport tcp -i "rtsp://' + args.rtsp_stream + '" -vf fps=fps=15'
+        if(args.use_ptz):
+            ip_pattern = re.compile('''((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)''')
+            camera_ip = ip_pattern.search(args.rtsp_stream).group(0)
+
     # remove extend file when we first start so we don't accidently extend the broadcast at the begining
     if os.path.exists(args.extend_file):
         os.remove(args.extend_file)
@@ -212,7 +232,8 @@ if __name__ == '__main__':
     update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
 
     #kick off broadcast
-    ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + ' -f v4l2 -framerate 15 -video_size 1920x1080 -c:v h264 -i /dev/video2 -c:v libx264 -pix_fmt yuv420p -preset superfast -g 25 -b:v 3000k -maxrate 3000k -bufsize 1500k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -q:v 5 -q:a 5 -b:a 64k -af pan="mono: c0=FL" -ac 1 -filter:a "volume=' + str(args.audio_gain) + 'dB" -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
+    ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
+    #ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + ' -c:v h264 -rtsp_transport tcp -i "rtsp://admin:LDSadmin@192.168.1.109:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif" -c:v libx264 -pix_fmt yuv420p -preset superfast -g 25 -b:v 3000k -maxrate 3000k -bufsize 1500k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -q:v 5 -q:a 5 -b:a 64k -af pan="mono: c0=FL" -ac 1 -filter:a "volume=' + str(args.audio_gain) + 'dB" -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
     ffmpeg_img = 'ffmpeg -f lavfi -i anullsrc -loop 1 -i ' + args.pause_image + ' -c:v libx264 -filter:v fps=fps=4 -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
 #    process = subprocess.run(ffmpeg, shell=True, capture_output=True)
 #    if(process.returncode != 0):
@@ -240,6 +261,12 @@ if __name__ == '__main__':
         if(stream == 1 and streaming == False):
           try:
             print("main stream")
+            if(args.use_ptz):
+                try:
+                    os.system('curl "http://192.168.108.9/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&2"') # point camera at pulpit before streaming
+                except:
+                    print("PTZ Problem")
+                time.sleep(3) # wait for camera to get in position before streaming, hand count for this is about 3 seconds.
             streaming = True
             process = subprocess.Popen(split(ffmpeg), shell=False, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
@@ -261,6 +288,11 @@ if __name__ == '__main__':
         elif(stream == 0 and streaming == False):
           try:
             print("pause stream")
+            if(args.use_ptz):
+                try:
+                    os.system('curl "http://192.168.108.9/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"') # point camera at wall to signal streaming as paused
+                except:
+                    print("PTZ Problem")
             streaming = True
             process = subprocess.Popen(split(ffmpeg_img), shell=False, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
@@ -281,6 +313,9 @@ if __name__ == '__main__':
                 sms.send_sms(args.num_from, args.num_to, args.ward + " had a live broadcast failure while paused!", args.verbose)
 
         time.sleep(0.1)
+
+    if(args.use_ptz):
+        os.system('curl "http://192.168.108.9/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"') # point camera at wall to signal streaming as stopped
 
     print("Finished stream...")
     yt.stop_broadcast(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose)

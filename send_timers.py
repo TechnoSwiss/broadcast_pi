@@ -48,6 +48,11 @@ if __name__ == '__main__':
     except:
             send_text += '\n\n !!! BANDWIDTH TEST FAILED !!!'
 
+    try:
+        send_text += '\n\n' + check_output(['ping', '-c', '2', '192.168.108.9']).decode('utf-8')
+    except:
+        send_text += '\n\n !!! CAMERAPING FAILED !!!'
+
     if(args.num_from is not None and args.num_to is not None):
         print(send_text)
         sms.send_sms(args.num_from, args.num_to, send_text, args.verbose)
