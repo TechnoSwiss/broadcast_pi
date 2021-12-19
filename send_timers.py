@@ -4,7 +4,7 @@ import argparse
 import os
 import traceback
 
-from subprocess import check_output
+from subprocess import Popen, check_output, PIPE
 from datetime import datetime, timedelta
 
 import sms # sms.py local file
@@ -35,11 +35,13 @@ if __name__ == '__main__':
 
     start_ping = datetime.now()
     try:
-        send_text += '\n\n' + check_output(['ping', '-c', '2', 'x.rtmp.youtube.com']).decode('utf-8')
+        ping_results = Popen(['ping', '-c', '2', 'x.rtmp.youtube.com'], stdout=PIPE)
+        send_text += '\n\n' + check_output(['grep', '-v', 'rtt'], stdin=ping_results.stdout).decode('utf-8')
+        ping_results.wait()
     except:
         send_text += '\n\n !!! PING FAILED !!!'
     ping_delta = datetime.now() - start_ping
-    send_text += '\nTotal ping time w/ resolve: ' + str(ping_delta) + '\n\n'
+    send_text += '\nTotal ping time w/ resolve: ' + str(ping_delta) + '\n\n\n'
     try:
         bandwidth = check_output(['speedtest']).decode('utf-8').splitlines(keepends=True)
         for line in bandwidth:
@@ -49,9 +51,12 @@ if __name__ == '__main__':
             send_text += '\n\n !!! BANDWIDTH TEST FAILED !!!'
 
     try:
-        send_text += '\n\n' + check_output(['ping', '-c', '2', '192.168.108.9']).decode('utf-8')
+        ping_results = Popen(['ping', '-c', '2', '192.168.108.9'], stdout=PIPE)
+        send_text += '\n\n' + check_output(['grep', '-v', 'rtt'], stdin=ping_results.stdout).decode('utf-8')
+        ping_results.wait()
     except:
-        send_text += '\n\n !!! CAMERAPING FAILED !!!'
+        if(args.verbose): print(traceback.format_exc())
+        send_text += '\n\n !!! CAMERA PING FAILED !!!'
 
     if(args.num_from is not None and args.num_to is not None):
         print(send_text)

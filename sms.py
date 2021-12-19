@@ -16,6 +16,7 @@
 
 import argparse
 import os
+import traceback
 from twilio.rest import Client # pip3 install twilio
 
 #Twilio account sid and auth token
@@ -43,7 +44,7 @@ def send_sms(num_from, num_to, sms_message, verbose = False):
                      )
     except:
         if(verbose): print(traceback.format_exc())
-        print("SMS Account Auth File Read Failure")
+        print("SMS Send Failure")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Send SMS Message')
