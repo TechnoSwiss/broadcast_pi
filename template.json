@@ -14,7 +14,7 @@
 	"delete_time_delay": 10,
 	"delete_current": true,
 	"delete_completed": true,
-	"delete_ready": false,
+	"delete_ready": true,
 	"source_rtsp_stream": "<ip-cam stream high bandwidth>",
 	"source_rtsp_lowbandwidth": "<ip-cam stream low bandwidth>",
 	"_source_usb_cam": "",
