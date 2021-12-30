@@ -3,6 +3,9 @@
 import argparse
 import os
 import traceback
+import json
+
+from datetime import datetime, timedelta
 
 import google_auth # google_auth.py local file
 import update_link # update_link.py local file
@@ -22,7 +25,8 @@ def bind_event(youtube, current_id, ward, num_from = None, num_to = None, verbos
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Insert Live Broadcast in YouTube Live list.')
-    parser.add_argument('-w','--ward',type=str,required=True,help='Name of Ward being broadcast')
+    parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
+    parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
     parser.add_argument('-i','--title',type=str,default='Live Stream',help='Broadcast Title')
     parser.add_argument('-S','--status-file',type=str,help='Path and fineame for file used to write out Start/Stop time status.')
     parser.add_argument('-n','--thumbnail',type=str,default='thumbnail.jpg',help='Path and filename for the JPG image that will be the video thumbnail')
@@ -41,9 +45,70 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
+    if(args.config_file is not None and os.path.exists(args.config_file)):
+        with open(args.config_file, "r") as configFile:
+            config = json.load(configFile)
+
+            # check for keys in config file
+            if 'broadcast_ward' in config:
+                args.ward = config['broadcast_ward']
+            if 'broadcast_title' in config:
+                args.title = config['broadcast_title']
+            if 'broadcast_title_card' in config:
+                args.thumbnail = config['broadcast_title_card']
+            if 'broadcast_day' in config:
+                broadcast_day = config['broadcast_day']
+            if 'broadcast_time' in config:
+                args.start_time = config['broadcast_time']
+            if 'broadcast_length' in config:
+                args.run_time = config['broadcast_length']
+            if 'broadcast_description' in config:
+                description = config['broadcast_description']
+            if 'delete_current' in config:
+                delete_current = config['delete_current']
+            if 'delete_completed' in config:
+                delete_complete = config['delete_completed']
+            if 'delete_ready' in config:
+                delete_ready = config['delete_ready']
+            if 'url_key' in config:
+                args.url_key = config['url_key']
+            if 'url_name' in config:
+                args.url_filename = config['url_name']
+            if 'url_ssh_host' in config:
+                args.host_name = config['url_ssh_host']
+            if 'url_ssh_username' in config:
+                args.user_name = config['url_ssh_username']
+            if 'url_ssh_key_dir' in config:
+                args.home_dir = config['url_ssh_key_dir']
+            if 'broadcast_status' in config:
+                args.status_file = config['broadcast_status']
+            if 'notification_text_from' in config:
+                args.num_from = config['notification_text_from']
+            if 'notification_text_to' in config:
+                args.num_to = config['notification_text_to']
+
+    if(args.ward is None):
+        print("!!Ward is a required argument!!")
+        exit()
+
     credentials_file = args.ward.lower() + '.auth'
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date, args.ward, args.num_from, args.num_to, args.verbose)
+    if(broadcast_day is None):
+        broadcast_date = args.start_date
+    else:
+        import calendar
+        days = dict(zip([x.lower() for x in calendar.day_abbr], range(7)));
+
+        try:
+            start_time = datetime.now()
+            broadcast_date = datetime.strftime(start_time + timedelta(((7 + days[broadcast_day[0:3].lower()]) - start_time.weekday()) % 7), '%m/%d/%y')
+        except:
+            if(args.verbose): print(traceback.format_exc())
+            print("Failed to get broadcast date")
+            if(args.num_from is not None and args.num_to is not None):
+                sms.send_sms(args.num_from, args.num_to, args.ward + " failed to get broadcast date!", args.verbose)
+
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, broadcast_date, args.ward, args.num_from, args.num_to, args.verbose)
 
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)

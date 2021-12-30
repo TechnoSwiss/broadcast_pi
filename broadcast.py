@@ -15,6 +15,7 @@ import pickle
 import subprocess
 import time
 import threading
+import json
 
 from shlex import split
 from datetime import datetime, timedelta
@@ -28,8 +29,6 @@ import send_email # send_email.py localfile
 import update_status # update_status.py localfile
 import insert_event # insert_event.py localfile
 import count_viewers # count_viewers.py localfile
-
-VARIABLES_LOCAL = 'variables.local'
 
 class GracefulKiller:
   kill_now = False
@@ -78,7 +77,8 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Broadcast Live Ward Meeting to YouTube')
-    parser.add_argument('-w','--ward',type=str,required=True,help='Name of Ward being broadcast')
+    parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
+    parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
     parser.add_argument('-i','--title',type=str,default='Live Stream',help='Broadcast Title')
     parser.add_argument('-f','--control-file',type=str,default='pause',help='Path and filename for file used to Delay/Pause video stream')
     parser.add_argument('-p','--pause-image',type=str,default='pause.jpg',help='Path and filename for the JPG image that will be shown when stream is paused')
@@ -92,7 +92,7 @@ if __name__ == '__main__':
     parser.add_argument('-U','--url-filename',type=str,help='Use this for web filename instead of Unit name.')
     parser.add_argument('-L','--html-filename',type=str,help='Override default upload path and filename, this must be full path and filename for target webserver')
     parser.add_argument('-k','--url-key',type=str,help='The 4-digit code at the end of the URL')
-    parser.add_argument('-y','--youtube-key',type=str,required=True,help='YouTube Key')
+    parser.add_argument('-y','--youtube-key',type=str,help='YouTube Key')
     parser.add_argument('-a','--audio-delay',type=float,default=0.0,help='Audio Delay in Seconds (decimal)')
     parser.add_argument('-g','--audio-gain',type=int,help='Audio Gain in dB (integer)')
     parser.add_argument('-G','--audio-gate',type=int,help='Audio Gate post-gain, can not be used with Audio Gain')
@@ -112,10 +112,6 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False,action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    if(args.audio_gain is not None and args.audio_gate is not None):
-        print("!!Audio Gain and Audio Gate are mutually exclusive!!")
-        exit()
-
     killer = GracefulKiller()
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
@@ -134,26 +130,132 @@ if __name__ == '__main__':
             delete_complete = False
 
     extend_time = 0 # keep track of extend time so we can cap it if needed
+    recurring = True # is this a recurring broadcast, then create a new broadcast for next week
+    broadcast_day = None # for recurring broadcasts, what day of the week is the broadcast
+    audio_only_image = None # image that gets used for audio only broadcast, this is a super low bandwidth broadcast option and is only avaialble if image is provided
+    rtsp_stream_lowbandwidth = None # if available, a low bandwidth option for streaming
+    source_usb_cam = None # allows for setting USB camera
+    url_randomize = False # allows for some security to control access to the stream URL
+    email_send = True # sets if emails will be sent out
+    email_url_addresses = [] # email addresses to sent randomized URL to
+    description = None
+    bandwidth_file = None
 
     testing = True if os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/testing') else False
+
+    if(args.config_file is not None):
+        if("/" in args.config_file):
+            config_file = args.config_file
+        else:
+            config_file =  os.path.exists(os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file)
+    if(args.config_file is not None and os.path.exists(args.config_file)):
+        with open(args.config_file, "r") as configFile:
+            config = json.load(configFile)
+
+            # check for keys in config file
+            if 'testing' in config:
+                testing |= config['testing']
+            if 'broadcast_ward' in config:
+                args.ward = config['broadcast_ward']
+            if 'broadcast_title' in config:
+                args.title = config['broadcast_title']
+            if 'broadcast_title_card' in config:
+                args.thumbnail = config['broadcast_title_card']
+            if 'broadcast_pause_card' in config:
+                args.pause_image = config['broadcast_pause_card']
+            if 'broadcast_audio_card' in config:
+                audio_only_image = config['broadcast_audio_card']
+            if 'broadcast_recurring' in config:
+                recurring = config['broadcast_recurring']
+            if 'broadcast_day' in config:
+                broadcast_day = config['broadcast_day']
+            if 'broadcast_time' in config:
+                args.start_time = config['broadcast_time']
+            if 'broadcast_length' in config:
+                args.run_time = config['broadcast_length']
+            if 'broadcast_description' in config:
+                description = config['broadcast_description']
+            if 'youtube_key' in config:
+                args.youtube_key = config['youtube_key']
+            if 'delete_time_delay' in config:
+                args.delay_after = config['delete_time_delay']
+            if 'delete_current' in config:
+                delete_current = config['delete_current']
+            if 'delete_completed' in config:
+                delete_complete = config['delete_completed']
+            if 'delete_ready' in config:
+                delete_ready = config['delete_ready']
+            if 'source_rtsp_stream' in config:
+                args.rtsp_stream = config['source_rtsp_stream']
+            if 'source_rtsp_lowbandwidth' in config:
+                rtsp_stream_lowbandwidth = config['source_rtsp_lowbandwidth']
+            if 'source_usb_cam' in config:
+                source_usb_cam = config['source_usb_cam']
+            if 'source_ptz_enable' in config:
+                args.use_ptz = config['source_ptz_enable']
+            if 'url_key' in config:
+                args.url_key = config['url_key']
+            if 'url_randomize' in config:
+                url_randomize = config['url_randomize']
+            if 'url_name' in config:
+                args.url_filename = config['url_name']
+            if 'url_ssh_host' in config:
+                args.host_name = config['url_ssh_host']
+            if 'url_ssh_username' in config:
+                args.user_name = config['url_ssh_username']
+            if 'url_ssh_key_dir' in config:
+                args.home_dir = config['url_ssh_key_dir']
+            if 'audio_delay' in config:
+                args.audio_delay = config['audio_delay']
+            if 'audio_gain' in config:
+                args.audio_gain = config['audio_gain']
+            if 'audio_gate' in config:
+                args.audio_gate = config['audio_gate']
+            if 'broadcast_status' in config:
+                args.status_file = config['broadcast_status']
+            if 'broadcast_pause_control' in config:
+                args.control_file = config['broadcast_pause_control']
+            if 'broadcast_bandwidth_control' in config:
+                bandwidth_file = config['broadcast_bandwidth_control']
+            if 'max_extend_minutes' in config:
+                args.extend_max = config['max_extend_minutes']
+            if 'max_extend_control' in config:
+                args.extend_file = config['max_extend_control']
+            if 'email_extended_data' in config:
+                args.extended = config['email_extended_data']
+            if 'email_send' in config:
+                email_send = config['email_send']
+            if 'email_from_account' in config:
+                args.email_from = config['email_from_account']
+            if 'email_dkim_key' in config:
+                args.dkim_private_key = config['email_dkim_key']
+            if 'email_dkim_domain' in config:
+                args.dkim_selector = config['email_dkim_domain']
+            if 'email_viewer_addresses' in config:
+                args.email_to = config['email_viewer_addresses']
+            if 'email_url_addresses' in config:
+                email_url_addresses = config['email_url_addresses']
+            if 'notification_text_from' in config:
+                args.num_from = config['notification_text_from']
+            if 'notification_text_to' in config:
+                args.num_to = config['notification_text_to']
+
+    if(args.audio_gain is not None and args.audio_gate is not None):
+        print("!!Audio Gain and Audio Gate are mutually exclusive!!")
+        exit()
+    if(args.ward is None):
+        print("!!Ward is required argument!!")
+        exit()
+    if(args.youtube_key is None):
+        print("!!YouTube Key is a required argument!!")
+        exit()
+
     if(testing):
         print("!!testing is active!!")
         if(args.num_from is not None and args.num_to is not None):
             sms.send_sms(args.num_from, args.num_to, args.ward + " testing is active!", args.verbose)
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, args.ward, args.num_from, args.num_to, args.verbose)
 
-    description = None
-    if os.path.exists(VARIABLES_LOCAL):
-        try:
-            with open(VARIABLES_LOCAL, 'r') as f:
-                description = f.readline().replace('\n', '')
-                print(description)
-        except:
-            print("Failure reading local variables, defaults will be used.")
-            if(args.num_from is not None and args.num_to is not None):
-                sms.send_sms(args.num_from, args.num_to, args.ward + " failure reading local variables, defaults will be used!", args.verbose)
-    else:
-        print("No local variables file, defaults will be used.")
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, args.ward, args.num_from, args.num_to, args.verbose)
 
     update_start_stop = False
     if(datetime.now() >= stop_time):
@@ -206,6 +308,7 @@ if __name__ == '__main__':
         if(args.use_ptz):
             ip_pattern = re.compile('''((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)''')
             camera_ip = ip_pattern.search(args.rtsp_stream).group(0)
+        camera_parameters_lbw = ' -c:v h264 -rtsp_transport tcp -i "rtsp://' + rtsp_stream_lowbandwidth + '" -vf fps=fps=15' if rtsp_stream_lowbandwidth is not None else None
 
     # remove extend file when we first start so we don't accidently extend the broadcast at the begining
     if os.path.exists(args.extend_file):
@@ -233,12 +336,17 @@ if __name__ == '__main__':
 
     #kick off broadcast
     ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
-    #ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + ' -c:v h264 -rtsp_transport tcp -i "rtsp://admin:LDSadmin@192.168.1.109:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif" -c:v libx264 -pix_fmt yuv420p -preset superfast -g 25 -b:v 3000k -maxrate 3000k -bufsize 1500k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -q:v 5 -q:a 5 -b:a 64k -af pan="mono: c0=FL" -ac 1 -filter:a "volume=' + str(args.audio_gain) + 'dB" -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
-    ffmpeg_img = 'ffmpeg -f lavfi -i anullsrc -loop 1 -i ' + args.pause_image + ' -c:v libx264 -filter:v fps=fps=4 -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
-#    process = subprocess.run(ffmpeg, shell=True, capture_output=True)
-#    if(process.returncode != 0):
-#        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube process exited with error!")
-#        exit()
+    ffmpeg_lbw = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters_lbw + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if camera_parameters_lbw is not None else ffmpeg
+    ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -loop 1 -i ' + audio_only_image + ' -c:v libx264 -filter:v fps=fps=4 -g 7 -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if audio_only_image is not None else ffmpeg
+    ffmpeg_img = 'ffmpeg -thread_queue_size 2048 -f lavfi -i anullsrc -thread_queue_size 2048 -loop 1 -i ' + args.pause_image + ' -c:v libx264 -filter:v fps=fps=4 -g 7 -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
+
+    broadcast_stream = [ffmpeg, ffmpeg_lbw, ffmpeg_audio]
+    broadcast_index = 0
+    broadcast_index_new = 0
+    broadcast_downgrade_delay = [2, 4, 4] # how long to we wait before step from one broadcast stream to the next?
+    broadcast_status_length = datetime.now()
+    broadcast_status_check = datetime.now()
+
     process = None
     streaming = False
     count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (args.ward.lower() + '_viewers.csv', youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose, args.extended))
@@ -249,6 +357,7 @@ if __name__ == '__main__':
     verify_broadcast.daemon = True
     verify_broadcast.start()
     broadcast_start = datetime.now()
+
     while(datetime.now() < stop_time and not killer.kill_now):
         try:
             stream = 0 if os.path.exists(args.control_file) else 1 # stream = 1 means we should be broadcasting the camera feed, stream = 0 means we should be broadcasting the title card "pausing" the video
@@ -263,12 +372,12 @@ if __name__ == '__main__':
             print("main stream")
             if(args.use_ptz):
                 try:
-                    os.system('curl "http://192.168.108.9/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&2"') # point camera at pulpit before streaming
+                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&2"]) # point camera at pulpit before streaming
                 except:
                     print("PTZ Problem")
                 time.sleep(3) # wait for camera to get in position before streaming, hand count for this is about 3 seconds.
             streaming = True
-            process = subprocess.Popen(split(ffmpeg), shell=False, stderr=subprocess.DEVNULL)
+            process = subprocess.Popen(split(broadcast_stream[broadcast_index]), shell=False, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
             update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
             while process.poll() is None:
@@ -277,6 +386,55 @@ if __name__ == '__main__':
                     process.terminate()
                     process.wait()
                     break;
+                try:
+                    if(bandwidth_file is not None and os.path.exists(bandwidth_file)):
+                        with open(bandwidth_file, "r") as bandwidthFile:
+                            broadcast_index_new = int(bandwidthFile.readline())
+                            if(broadcast_index_new < len(broadcast_stream) and broadcast_index_new >= 0):
+                                if(broadcast_index != broadcast_index_new):
+                                    broadcast_index = broadcast_index_new
+                                    print("Setting broadcast to index " + str(broadcast_index))
+                                    # if setting the broadcast index to 0 which is the default, remove the bandwidth file so we don't keep reading it each pass
+                                    if(broadcast_index == 0):
+                                        if os.path.exists(bandwidth_file):
+                                            os.remove(bandwidth_file)
+                                    process.terminate()
+                                    process.wait()
+                                    break;
+                            else:
+                                raise Exception("Invalid broadcast index")
+                except:
+                    if(args.verbose): print(traceback.format_exc())
+                    print("Failure reading bandwidth file")
+                    if(args.num_from is not None and args.num_to is not None):
+                        sms.send_sms(args.num_from, args.num_to, args.ward + " had a failure reading the bandwidth file!", args.verbose)
+                # if we're already at the lowest bandwidth broadcast there's no reason to keep checking to see if we need to reduce bandwidth
+                if(broadcast_index < (len(broadcast_stream) - 1) and (datetime.now() - broadcast_status_check) > timedelta(minutes=1)):
+                    # every minute grab the broadcast status so we can reduce the bandwidth if there's problems
+                    status, description = yt.get_broadcast_health(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose)
+                    broadcast_status_check = datetime.now()
+                    if(args.verbose): print(status)
+                    if(status == 'bad' and (datetime.now() - broadcast_status_length) > timedelta(minutes=broadcast_downgrade_delay[broadcast_index])):
+                        broadcast_index += 1
+                        if(broadcast_index >= len(broadcast_stream)): broadcast_index = len(broadcast_stream - 1)
+                        print("Reducing broadcast bandwidth, switching to index " + str(broadcast_index))
+                        try:
+                            if(bandwidth_file is not None):
+                                with open(bandwidth_file, "w") as bandwidthFile:
+                                    bandwidthFile.write(str(broadcast_index))
+                        except:
+                            if(args.verbose): print(traceback.format_exc())
+                            print("Failure writing bandwidth file")
+                            if(args.num_from is not None and args.num_to is not None):
+                                sms.send_sms(args.num_from, args.num_to, args.ward + " had a failure writing the bandwidth file!", args.verbose)
+                        broadcast_status_length = datetime.now()
+                        if(args.num_from is not None and args.num_to is not None):
+                            sms.send_sms(args.num_from, args.num_to, args.ward + " reducing broadcast bandwidth to index " + str(broadcast_index) + "!", args.verbose)
+                        process.terminate()
+                        process.wait()
+                        break;
+                    if(status != 'bad'):
+                        broadcast_status_length = datetime.now()
                 time.sleep(1)
             streaming = False
           except:
@@ -290,7 +448,7 @@ if __name__ == '__main__':
             print("pause stream")
             if(args.use_ptz):
                 try:
-                    os.system('curl "http://192.168.108.9/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"') # point camera at wall to signal streaming as paused
+                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"]) # point camera at wall to signal streaming as paused
                 except:
                     print("PTZ Problem")
             streaming = True
@@ -315,10 +473,15 @@ if __name__ == '__main__':
         time.sleep(0.1)
 
     if(args.use_ptz):
-        os.system('curl "http://192.168.108.9/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"') # point camera at wall to signal streaming as stopped
+        subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"]) # point camera at wall to signal streaming as stopped
 
     print("Finished stream...")
-    yt.stop_broadcast(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose)
+    # if we're forcibly killing the stream we're doing something manually
+    # leave the stream endpoint running on youtube in case we need to re-start
+    # the broadcast so we can continue using the same endpoint, this means
+    # we'll need to manually stop the broadcast on youtube studio
+    if(not killer.kill_now):
+        yt.stop_broadcast(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose)
 
     # change status back to start so webpage isn't left thinking we're still broadcasting/paused
     update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
@@ -326,6 +489,8 @@ if __name__ == '__main__':
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     if os.path.exists(args.control_file):
         os.remove(args.control_file)
+    if os.path.exists(bandwidth_file):
+        os.remove(bandwidth_file)
 
     if(not killer.kill_now): # don't wait if we're trying to kill the process now
         # this time while we wait before deleting the video is to allow people
@@ -340,10 +505,27 @@ if __name__ == '__main__':
         # keep hitting a crash here with the viewers script, adding a delay for this case to prevent possble race condition
         time.sleep(5)
 
+    # read config file so we can pull in changes for testing and delete
+    # that may have happened while script was running
+    testing |= True if os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/testing') else False
+    with open(args.config_file, "r") as configFile:
+        config = json.load(configFile)
+
+        if 'testing' in config:
+            testing |= config['testing']
+        if 'delete_current' in config:
+            delete_current = config['delete_current']
+        if 'delete_completed' in config:
+            delete_complete = config['delete_completed']
+        if 'delete_ready' in config:
+            delete_ready = config['delete_ready']
+        if 'email_send' in config:
+            email_send = config['email_send']
+
     # testing automation scripts can generate emails with invalid data
     # and a number of those email can be generated, look for a control
     # file and don't send emails if control file is present
-    if(not testing):
+    if(not testing and send_email):
         print("e-mail concurrent viewer file")
         if(args.email_from is not None and args.email_to is not None):
             send_email.send_viewer_file(args.ward.lower() + '_viewers.csv', args.email_from, args.email_to, args.ward, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
@@ -367,22 +549,39 @@ if __name__ == '__main__':
         if(args.num_from is not None and args.num_to is not None):
             sms.send_sms(args.num_from, args.num_to, args.ward + " failed to delete broadcasts!", args.verbose)
 
-    print("Create next weeks broadcast")
-    # create a broadcast endpoint for next weeks video
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y'), args.ward, args.num_from, args.num_to, args.verbose)
-    current_id = insert_event.insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
+    # create next weeks broadcast if recurring
+    # don't create a new broadcast is forcibly killing process
+    if(recurring and not killer.kill_now):
+        print("Create next weeks broadcast")
+        if(broadcast_day is None):
+            next_date = datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y')
+        else:
+            import calendar
+            days = dict(zip([x.lower() for x in calendar.day_abbr], range(7)));
 
- # update status file with next start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-    update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
+            try:
+                next_date = datetime.strftime(start_time + timedelta(((7 + days[broadcast_day[0:3].lower()]) - start_time.weekday()) % 7), '%m/%d/%y')
+            except:
+                if(args.verbose): print(traceback.format_exc())
+                print("Failed to get next broadcast date")
+                if(args.num_from is not None and args.num_to is not None):
+                    sms.send_sms(args.num_from, args.num_to, args.ward + " failed to get next broadcast date!", args.verbose)
+        # create a broadcast endpoint for next weeks video
+        start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, next_date, args.ward, args.num_from, args.num_to, args.verbose)
+        current_id = insert_event.insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
 
-    if(current_id is None):
-        print("Failed to create new broadcast for next week")
-        if(args.num_from is not None and args.num_to is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " failed to create broadcast for next week!", args.verbose)
+         # update status file with next start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
+        update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
 
-    # make sure link on web host is current
-    update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
+        if(current_id is None):
+            print("Failed to create new broadcast for next week")
+            if(args.num_from is not None and args.num_to is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " failed to create broadcast for next week!", args.verbose)
+
+        # make sure link on web host is current
+        update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     if os.path.exists(args.control_file):
         os.remove(args.control_file)
-
+    if os.path.exists(bandwidth_file):
+        os.remove(bandwidth_file)

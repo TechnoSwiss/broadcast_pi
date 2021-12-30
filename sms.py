@@ -37,11 +37,15 @@ client = Client(account_sid, auth_token)
 
 def send_sms(num_from, num_to, sms_message, verbose = False):
     try:
-        message = client.messages.create(
-                         body=sms_message,
-                         from_=num_from,
-                         to=num_to
-                     )
+        if(type(num_to) != list):
+            num_to = [num_to]
+
+        for number in num_to:
+            message = client.messages.create(
+                             body=sms_message,
+                             from_=num_from,
+                             to=number
+                         )
     except:
         if(verbose): print(traceback.format_exc())
         print("SMS Send Failure")

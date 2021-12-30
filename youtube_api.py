@@ -205,6 +205,23 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None,
             sms.send_sms(num_from, num_to, ward + " failed to get broadcast status!", verbose)
         return(None)
 
+def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
+    try:
+        stream = youtube.liveStreams().list(
+            part='status',
+            mine=True
+        ).execute()
+        healthStatus = stream['items'][0]['status']['healthStatus']['status']
+        description = stream['items'][0]['status']['healthStatus']['configurationIssues'][0]['description'] if 'configurationIssues' in stream['items'][0]['status']['healthStatus'] else ""
+        return(healthStatus, description)
+
+    except:
+        if(verbose): print(traceback.format_exc())
+        print("Failed to get broadcast health")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to get broadcast health!", verbose)
+        return("", "")
+
 def create_stream(youtube, ward, num_from = None, num_to = None, verbose = False, stream_name = 'Default'):
     try:
         getStream = youtube.liveStreams().insert(

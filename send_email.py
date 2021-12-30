@@ -16,6 +16,8 @@ from email import encoders
 from email.message import Message
 from email.mime.text import MIMEText
 
+import sms # sms.py local file
+
 EMAIL_PASS = 'email.pass'
 
 email_auth = {}
@@ -42,6 +44,10 @@ def ordinal(n):
 
 def send_viewer_file(csv_file, email_from, email_to, ward, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
     sender_domain = email_from.split('@')[-1]
+    # added a JSON configuration file that allows creating this as a list
+    # so need to be able to turn it into a comma seperated string
+    if(type(email_to) == list):
+        email_to = ",".join(email_to)
     msg = MIMEMultipart()
     msg["From"] = email_from
     msg["To"] = email_to
