@@ -303,12 +303,13 @@ if __name__ == '__main__':
         audio_parameters = ' -filter_complex agate=makeup=' + str(args.audio_gate)
 
     camera_parameters = ' -f v4l2 -framerate 15 -video_size 1920x1080 -c:v h264 -i /dev/video2'
+    camera_parameters_lbw = ' -f v4l2 -framerate 15 -video_size 854x480 -c:v h264 -i /dev/video2'
     if(args.rtsp_stream is not None): # we're going to use an RTSP stream instead of the USB camera
         camera_parameters = ' -c:v h264 -rtsp_transport tcp -i "rtsp://' + args.rtsp_stream + '" -vf fps=fps=15'
+        camera_parameters_lbw = ' -c:v h264 -rtsp_transport tcp -i "rtsp://' + rtsp_stream_lowbandwidth + '" -vf fps=fps=15' if rtsp_stream_lowbandwidth is not None else None
         if(args.use_ptz):
             ip_pattern = re.compile('''((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)''')
             camera_ip = ip_pattern.search(args.rtsp_stream).group(0)
-        camera_parameters_lbw = ' -c:v h264 -rtsp_transport tcp -i "rtsp://' + rtsp_stream_lowbandwidth + '" -vf fps=fps=15' if rtsp_stream_lowbandwidth is not None else None
 
     # remove extend file when we first start so we don't accidently extend the broadcast at the begining
     if os.path.exists(args.extend_file):
