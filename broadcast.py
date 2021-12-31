@@ -488,10 +488,16 @@ if __name__ == '__main__':
     update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
-    if os.path.exists(args.control_file):
-        os.remove(args.control_file)
-    if os.path.exists(bandwidth_file):
-        os.remove(bandwidth_file)
+    try:
+        if(args.control_file is not None and os.path.exists(args.control_file)):
+            os.remove(args.control_file)
+        if(bandwidth_file is not None and os.path.exists(bandwidth_file)):
+            os.remove(bandwidth_file)
+    except:
+        if(args.verbose): print(traceback.format_exc())
+        print("Failed cleaning up control files")
+        if(args.num_from is not None and args.num_to is not None):
+            sms.send_sms(args.num_from, args.num_to, args.ward + " failed cleaning up control files!", args.verbose)
 
     if(not killer.kill_now): # don't wait if we're trying to kill the process now
         # this time while we wait before deleting the video is to allow people
@@ -582,7 +588,13 @@ if __name__ == '__main__':
         update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
-    if os.path.exists(args.control_file):
-        os.remove(args.control_file)
-    if os.path.exists(bandwidth_file):
-        os.remove(bandwidth_file)
+    try:
+        if(args.control_file is not None and os.path.exists(args.control_file)):
+            os.remove(args.control_file)
+        if(bandwidth_file is not None and os.path.exists(bandwidth_file)):
+            os.remove(bandwidth_file)
+    except:
+        if(args.verbose): print(traceback.format_exc())
+        print("Failed cleaning up control files")
+        if(args.num_from is not None and args.num_to is not None):
+            sms.send_sms(args.num_from, args.num_to, args.ward + " failed cleaning up control files!", args.verbose)
