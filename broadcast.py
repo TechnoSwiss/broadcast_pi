@@ -567,7 +567,9 @@ if __name__ == '__main__':
             days = dict(zip([x.lower() for x in calendar.day_abbr], range(7)));
 
             try:
-                next_date = datetime.strftime(start_time + timedelta(((7 + days[broadcast_day[0:3].lower()]) - start_time.weekday()) % 7), '%m/%d/%y')
+                next_days = ((7 + days[broadcast_day[0:3].lower()]) - start_time.weekday()) % 7
+                if(next_days == 0) : next_days = 7
+                next_date = datetime.strftime(start_time + timedelta(days=next_days), '%m/%d/%y')
             except:
                 if(args.verbose): print(traceback.format_exc())
                 print("Failed to get next broadcast date")

@@ -101,7 +101,9 @@ if __name__ == '__main__':
 
         try:
             start_time = datetime.now()
-            broadcast_date = datetime.strftime(start_time + timedelta(((7 + days[broadcast_day[0:3].lower()]) - start_time.weekday()) % 7), '%m/%d/%y')
+            next_days = ((7 + days[broadcast_day[0:3].lower()]) - start_time.weekday()) % 7
+            if(next_days == 0): next_days = 7
+            broadcast_date = datetime.strftime(start_time + timedelta(days=next_days), '%m/%d/%y')
         except:
             if(args.verbose): print(traceback.format_exc())
             print("Failed to get broadcast date")
