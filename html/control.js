@@ -11,6 +11,10 @@ $(function () {
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul','Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+    $(this).scrollTop(0);
+    $('html').animate({scrollTop:0}, 1);
+    $('body').animate({scrollTop:0}, 1);
+    
     let formatDate = (timestamp) => {
 	let date = new Date(timestamp);
 
@@ -27,10 +31,14 @@ $(function () {
 	let min = ('0'+(date.getMinutes())).slice(-2);
 	return ` on ${dow}, ${mon} ${day} at ${hour}:${min}${ampm}`;
     };
-    
-    let setStatusText = (status, buttonPaused) => {
+
+    let setStatusText = (status) => {
+	if(status === undefined) {
+	    return;
+	}
+
 	let orgInfo = '';
-	if(status.org !== 'unknown') {
+	if(status.org !== undefined && status.org !== 'unknown') {
 	    orgInfo = ` (${status.org})`;
 	}
 	switch(status.state) {
@@ -83,6 +91,10 @@ $(function () {
     };
     
     let setButtonStatus = (state) => {
+	if(state === undefined) {
+	    return;
+	}
+
 	$('#extend').hide();
 	if(state.match(/broadcast|start|pause/i)) {
 	    $('#extend').show();
@@ -98,6 +110,30 @@ $(function () {
             $('#pauseResume').addClass('holding');
 	}
 
+    };
+
+    let setBandwidth = (bandwidth) => {
+	if(bandwidth !== undefined) {
+	    $('.bandwidth').removeClass('selected');
+	    $(`.bandwidth[bandwidth=${bandwidth}]`).addClass('selected');
+	}
+    };
+
+    let setPreset = (preset) => {
+	console.log(preset);
+	if(preset === undefined) {
+	    $('.preset').removeClass('selected');
+	    return;
+	}
+	// moving
+	preset = parseInt(preset) || 0;
+
+	if(preset < 1) {
+	    return;
+	}
+
+	$('.preset').removeClass('selected');
+	$(`.preset[preset=${preset}]`).addClass('selected');
     };
 
     let filterSchedule = (schedule) => {
@@ -175,6 +211,11 @@ $(function () {
 		let buttonPaused = data.buttonPaused;
 		
 		let status = parseStatus(data);
+
+                let bandwidth = data.bandwidth;
+
+		let preset = data.preset;
+
 		console.log(buttonPaused);
 		if(buttonPaused) {
 		    if (status.state.match(/broadcast|start|pause/i)) {
@@ -187,7 +228,11 @@ $(function () {
 		
 		setButtonStatus(status.state);
 
-		setStatusText(status, buttonPaused);
+		setStatusText(status);
+
+		setBandwidth(bandwidth);
+
+		setPreset(preset);
             })
             .fail(function (jqxhr, err) {
 		console.log(`error ${err}`);
@@ -213,12 +258,14 @@ $(function () {
     });
 
     $('html').on('click', '.preset', function () {
-        let preset = $(this).attr('name');
+	$('.preset').removeClass('selected');
+	$(this).addClass('selected');
+        let preset = $(this).attr('preset');
 
+	ajaxAction('moving');
         $.ajax(`http://` + window.location.hostname + `:8080/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&${preset}`)
             .done(function (data) {
                 console.log(data);
-                setState(data.status);
             })
             .fail(function (jqxhr, err) {
                 console.log(`error ${err}`);
@@ -226,8 +273,56 @@ $(function () {
         
     });
 
+    let cameraInt;
+    $('html').on('click', '#previewbutton', function () {
+        $('#content').toggleClass('previewopen');
+	if($('#content').hasClass('previewopen')) {
+	    $('#previewbutton').text('Close');
+	    cameraInt = setInterval(() => {
+		$('#preview').attr('src', `camera.jpg?${Date.now()}`);
+	    }, 333);
+	} else {
+	    $('#previewbutton').text('Preview');
+	    clearInterval(cameraInt);
+	    cameraInt = undefined;
+	}
+    });
+
+    $('html').on('click', '.rehome', function () {
+        $.ajax(`http://` + window.location.hostname + `:8080/cgi-bin/param.cgi?pan_tiltdrive_reset`)
+            .done(function (data) {
+                console.log(data);
+            })
+            .fail(function (jqxhr, err) {
+                console.log(`error ${err}`);
+            });
+
+    });
+
+    $('html').on('click', '.bandwidth', function () {
+        let bandwidth = $(this).attr('bandwidth');
+	ajaxAction(`bandwidth${bandwidth}`);
+    });
+
+    $('html').on('click', '.dropdown .label', function () {
+        $(this).parent().toggleClass('open');
+    });
+
+    let prevStream = undefined;
     ajaxAction('status');
     let statusPoller = setInterval(function() {
-	ajaxAction('status');
+	if(cameraInt) {
+	    ajaxAction('preview');
+	    prevStream = cameraInt;
+	} else if(prevStream) {
+	    ajaxAction('stoppreview');
+	    prevStream = undefined;
+	} else {
+	    ajaxAction('status');
+	}
     }, 1000);
+
+    $(window).on('beforeunload', function() {
+	ajaxAction('stoppreview');
+    });
 });

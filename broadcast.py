@@ -25,10 +25,13 @@ import google_auth # google_auth.py local file
 import update_link # update_link.py local file
 import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
-import send_email # send_email.py localfile
-import update_status # update_status.py localfile
-import insert_event # insert_event.py localfile
-import count_viewers # count_viewers.py localfile
+import send_email # send_email.py local file
+import update_status # update_status.py local file
+import insert_event # insert_event.py local file
+import count_viewers # count_viewers.py local file
+import presets # presets.py local file
+import local_stream as ls # local_stream.py local file
+import global_file as gf # local file for sharing globals between files
 
 class GracefulKiller:
   kill_now = False
@@ -112,7 +115,7 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False,action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    killer = GracefulKiller()
+    gf.killer = GracefulKiller()
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
     delete_ready = True # script will create a new broadcast endpoint after the delete process, an existing ready broadcasts will interfere since we're not creating seperate endpoints for each broadcast, so delete any ready broadcasts to prevent problems
@@ -140,6 +143,11 @@ if __name__ == '__main__':
     email_url_addresses = [] # email addresses to sent randomized URL to
     description = None
     bandwidth_file = None
+    local_stream = None
+    local_stream_output = None
+    local_stream_control = None
+    preset_file = None
+    preset_status_file = None
 
     testing = True if os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/testing') else False
 
@@ -175,6 +183,12 @@ if __name__ == '__main__':
                 args.run_time = config['broadcast_length']
             if 'broadcast_description' in config:
                 description = config['broadcast_description']
+            if 'local_stream' in config:
+                local_stream = config['local_stream']
+            if 'local_stream_output' in config:
+                local_stream_output = config['local_stream_output']
+            if 'preset_file' in config:
+                preset_file = config['preset_file']
             if 'youtube_key' in config:
                 args.youtube_key = config['youtube_key']
             if 'delete_time_delay' in config:
@@ -217,6 +231,10 @@ if __name__ == '__main__':
                 args.control_file = config['broadcast_pause_control']
             if 'broadcast_bandwidth_control' in config:
                 bandwidth_file = config['broadcast_bandwidth_control']
+            if 'local_stream_control' in config:
+                local_stream_control = config['local_stream_control']
+            if 'preset_status_file' in config:
+                preset_status_file = config['preset_status_file']
             if 'max_extend_minutes' in config:
                 args.extend_max = config['max_extend_minutes']
             if 'max_extend_control' in config:
@@ -357,9 +375,18 @@ if __name__ == '__main__':
     verify_broadcast = threading.Thread(target = verify_live_broadcast, args = (youtube, args.ward, args, current_id, args.html_filename, args.url_filename, args.num_from, args.num_to, args.verbose))
     verify_broadcast.daemon = True
     verify_broadcast.start()
+    if(local_stream is not None and local_stream_output is not None and local_stream_control is not None):
+        stream_local = threading.Thread(target = ls.local_stream_process, args = (args.ward, local_stream, local_stream_output, local_stream_control, args.num_from, args.num_to, args.verbose))
+        stream_local.daemon = True
+        stream_local.start()
+    if(camera_ip is not None and preset_file is not None and preset_status_file is not None):
+        preset_report = threading.Thread(target = presets.report_preset, args = (5, args.ward, camera_ip, preset_file, preset_status_file, args.num_from, args.num_to, args.verbose))
+        preset_report.daemon = True
+        preset_report.start()
+
     broadcast_start = datetime.now()
 
-    while(datetime.now() < stop_time and not killer.kill_now):
+    while(datetime.now() < stop_time and not gf.killer.kill_now):
         try:
             stream = 0 if os.path.exists(args.control_file) else 1 # stream = 1 means we should be broadcasting the camera feed, stream = 0 means we should be broadcasting the title card "pausing" the video
         except:
@@ -373,7 +400,7 @@ if __name__ == '__main__':
             print("main stream")
             if(args.use_ptz):
                 try:
-                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&2"]) # point camera at pulpit before streaming
+                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&2"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at pulpit before streaming
                 except:
                     print("PTZ Problem")
                 time.sleep(3) # wait for camera to get in position before streaming, hand count for this is about 3 seconds.
@@ -383,7 +410,7 @@ if __name__ == '__main__':
             update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
             while process.poll() is None:
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
-                if(os.path.exists(args.control_file) or datetime.now() > stop_time or killer.kill_now):
+                if(os.path.exists(args.control_file) or datetime.now() > stop_time or gf.killer.kill_now):
                     process.terminate()
                     process.wait()
                     break;
@@ -395,10 +422,6 @@ if __name__ == '__main__':
                                 if(broadcast_index != broadcast_index_new):
                                     broadcast_index = broadcast_index_new
                                     print("Setting broadcast to index " + str(broadcast_index))
-                                    # if setting the broadcast index to 0 which is the default, remove the bandwidth file so we don't keep reading it each pass
-                                    if(broadcast_index == 0):
-                                        if os.path.exists(bandwidth_file):
-                                            os.remove(bandwidth_file)
                                     process.terminate()
                                     process.wait()
                                     break;
@@ -412,9 +435,10 @@ if __name__ == '__main__':
                 # if we're already at the lowest bandwidth broadcast there's no reason to keep checking to see if we need to reduce bandwidth
                 if(broadcast_index < (len(broadcast_stream) - 1) and (datetime.now() - broadcast_status_check) > timedelta(minutes=1)):
                     # every minute grab the broadcast status so we can reduce the bandwidth if there's problems
-                    status, description = yt.get_broadcast_health(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose)
+                    status, status_description = yt.get_broadcast_health(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose)
                     broadcast_status_check = datetime.now()
                     if(args.verbose): print(status)
+                    if(args.verbose): print(status_description)
                     if(status == 'bad' and (datetime.now() - broadcast_status_length) > timedelta(minutes=broadcast_downgrade_delay[broadcast_index])):
                         broadcast_index += 1
                         if(broadcast_index >= len(broadcast_stream)): broadcast_index = len(broadcast_stream - 1)
@@ -449,7 +473,7 @@ if __name__ == '__main__':
             print("pause stream")
             if(args.use_ptz):
                 try:
-                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"]) # point camera at wall to signal streaming as paused
+                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as paused
                 except:
                     print("PTZ Problem")
             streaming = True
@@ -458,7 +482,7 @@ if __name__ == '__main__':
             update_status.update("pause", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
             while process.poll() is None:
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
-                if(not os.path.exists(args.control_file) or datetime.now() > stop_time or killer.kill_now):
+                if(not os.path.exists(args.control_file) or datetime.now() > stop_time or gf.killer.kill_now):
                     process.terminate()
                     process.wait()
                     break;
@@ -474,14 +498,14 @@ if __name__ == '__main__':
         time.sleep(0.1)
 
     if(args.use_ptz):
-        subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"]) # point camera at wall to signal streaming as stopped
+        subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as stopped
 
     print("Finished stream...")
     # if we're forcibly killing the stream we're doing something manually
     # leave the stream endpoint running on youtube in case we need to re-start
     # the broadcast so we can continue using the same endpoint, this means
     # we'll need to manually stop the broadcast on youtube studio
-    if(not killer.kill_now):
+    if(not gf.killer.kill_now):
         yt.stop_broadcast(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose)
 
     # change status back to start so webpage isn't left thinking we're still broadcasting/paused
@@ -499,14 +523,14 @@ if __name__ == '__main__':
         if(args.num_from is not None and args.num_to is not None):
             sms.send_sms(args.num_from, args.num_to, args.ward + " failed cleaning up control files!", args.verbose)
 
-    if(not killer.kill_now): # don't wait if we're trying to kill the process now
+    if(not gf.killer.kill_now): # don't wait if we're trying to kill the process now
         # this time while we wait before deleting the video is to allow people
         # time to finish watching the stream if they started late because of this
         # we want to continue getting viewer updates, so don't email until time runs out
         print("video will be deleted at {}".format((datetime.now() + timedelta(minutes=int(args.delay_after))).strftime("%d-%b-%Y %H:%M:%S")))
         # wait for X min before deleting video
         delete_time = datetime.now() + timedelta(minutes=args.delay_after)
-        while(datetime.now() < delete_time and not killer.kill_now):
+        while(datetime.now() < delete_time and not gf.killer.kill_now):
             time.sleep(1)
     else:
         # keep hitting a crash here with the viewers script, adding a delay for this case to prevent possble race condition
@@ -541,7 +565,7 @@ if __name__ == '__main__':
     try:
         # delete the recording we just finished
         # if forcibly killing process, don't delete video
-        if(delete_current and not killer.kill_now): youtube.videos().delete(id=current_id).execute()
+        if(delete_current and not gf.killer.kill_now): youtube.videos().delete(id=current_id).execute()
 
         # delete all completed videos in Live list
         # delete all ready videos as they will cause problems for the new broadcast we will insert at the end of the script
@@ -558,7 +582,7 @@ if __name__ == '__main__':
 
     # create next weeks broadcast if recurring
     # don't create a new broadcast is forcibly killing process
-    if(recurring and not killer.kill_now):
+    if(recurring and not gf.killer.kill_now):
         print("Create next weeks broadcast")
         if(broadcast_day is None):
             next_date = datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y')
@@ -593,8 +617,8 @@ if __name__ == '__main__':
     try:
         if(args.control_file is not None and os.path.exists(args.control_file)):
             os.remove(args.control_file)
-        if(bandwidth_file is not None and os.path.exists(bandwidth_file)):
-            os.remove(bandwidth_file)
+        if(local_stream_control is not None and os.path.exists(local_stream_control)):
+            os.remove(local_stream_control)
     except:
         if(args.verbose): print(traceback.format_exc())
         print("Failed cleaning up control files")

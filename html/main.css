@@ -1,8 +1,27 @@
+:root {
+    --preview-width: min(100vw, 60vh);
+}
+
+* {
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+}
+
 *:focus {
     outline: none;
 }
 
-#pauseResume, #extend {
+body {
+    padding-left: calc(100vw - 100%);
+}
+
+#content {
+    position: relative;
+}
+
+#pauseResume, #extend, #previewbutton {
     padding: 0px;
     text-align: center;
     display: block;
@@ -23,12 +42,11 @@
     color: black;
     background-color: lightBlue;
     height: 15vmin;
-    margin-top: 3vmin;
+    margin-top: 1vmin;
     display: none;
 }
 
-#pauseResume:active::before,
-#extend:active::before {
+#pauseResume:active::before, #extend:active::before {
     content: "";
     width: 105%;
     height: 200%;
@@ -66,30 +84,7 @@
     content: "Resume";
 }
 
-#presets {
-    position: relative;
-    width: 40vmin;
-    left: 50%;
-    margin-left: -20vmin;
-}
-
-.preset {
-    font-size: 6vmin;
-    line-height: 6vmin;
-    float: left;
-/*    width: 8vmin;*/
-    height: 8vmin;
-    margin: 1vmin;
-    display: block;
-    border: 1vmin solid black;
-}
-
-.preset:active {
-    background-color: gray;
-}
-
-#title,
-.status {
+#title, .status {
     text-align: center;
     font-size: 10vmin;
     line-height: 15vmin;
@@ -103,3 +98,95 @@
 #statusText2 {
     font-size: 4vmin;
 }
+
+.dropdown {
+    position: relative;
+    width: 40vmin;
+    margin-top: 4vmin;
+    left: 50%;
+    margin-left: -20vmin;
+}
+
+#content:last-child {
+    margin-bottom: 10vmin;
+}
+
+.option, .label {
+    padding: none;
+    font-family: Arial;
+    text-align: center;
+    font-size: 5vmin;
+    line-height: 8vmin;
+    width: 40vmin;
+    height: 10vmin;
+    margin-top: -1vmin;
+    display: block;
+    border: 1vmin solid black;
+}
+
+.option {
+    display: none;
+}
+
+.option.selected {
+    background-color: lightgray;
+}
+
+.dropdown.open .option {
+    display: block;
+}
+
+@supports not (-webkit-touch-callout: none) {
+    .option:active {
+	background-color: gray;
+    }
+}
+
+.chevron {
+    transform: rotate(-90deg);
+    display: block;
+    float: left;
+}
+
+.dropdown.open .chevron {
+    transform: rotate(0deg);
+}
+
+#previewcontainer, #previewbuffer {
+    position: fixed;
+    z-index: 100;
+    width: var(--preview-width);
+    height: 10vmin;
+    margin-left: calc(var(--preview-width) / -2);
+    left: 50vw;
+}
+
+.previewopen #previewcontainer, .previewopen #previewbuffer {
+    height: calc(var(--preview-width) * .5625 + 10vmin);
+}
+
+#preview {
+    display: block;
+    position: relative;
+    min-width: 100%;
+    height: calc(100% - 10vmin);
+}
+
+#previewbutton {
+    width: 50vmin;
+    margin-left: -25vmin;
+    font-family: Arial;
+    user-select: none;
+    color: black;
+    background-color: lightblue;
+    height: 10vmin;
+    border-top: 0px;
+}
+
+#previewbuffer {
+    position: relative;
+    z-index: 0;
+    background-color: white;
+}
+
+

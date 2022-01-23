@@ -45,6 +45,9 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
+    broadcast_day = None
+    description = None
+
     if(args.config_file is not None and os.path.exists(args.config_file)):
         with open(args.config_file, "r") as configFile:
             config = json.load(configFile)
@@ -126,7 +129,7 @@ if __name__ == '__main__':
             if(video_status == "ready"):
                 youtube.videos().delete(id=video_id).execute()
 
-    current_id = insert_event(youtube, args.title, None, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
+    current_id = insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
 
     if(args.stream is not None):
         bind_event(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose, args.stream)
