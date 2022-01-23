@@ -4,6 +4,7 @@ import argparse
 import signal
 import os
 import traceback
+import re
 import subprocess
 import time
 import threading
@@ -168,11 +169,47 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Report out camera current preset by getting camera positions and verifying against preset locations')
     parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
+    parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
+    parser.add_argument('-p','--pc-name',type=str,help='System name that script is running on.')
+    parser.add_argument('--preset_file',type=str,help='JSON file where camera presets are stored.')
+    parser.add_argument('--record_presets',default=False,action='store_true',help='Updates preset positions in preset_file')
+    parser.add_argument('-R','--rtsp-stream',type=str,help='Use to specify an RTSP stream on the network to use instead of USB camera')
+    parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
+    parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False,action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
     gf.killer = GracefulKiller()
 
-    #report_preset("evergreen", "192.168.108.9", "presets.json", "html/status/preset", None, None, True)
-    record_presets("rpi", "192.168.108.9", "presets.json", None, None, True)
+    if(args.config_file is not None and os.path.exists(args.config_file)):
+        with open(args.config_file, "r") as configFile:
+            config = json.load(configFile)
+
+            # check for keys in config file
+            if 'broadcast_ward' in config:
+                args.ward = config['broadcast_ward']
+            if 'preset_file' in config:
+                args.preset_file = config['preset_file']
+            if 'source_rtsp_stream' in config:
+                args.rtsp_stream = config['source_rtsp_stream']
+            if 'preset_status_file' in config:
+                preset_status_file = config['preset_status_file']
+            if 'notification_text_from' in config:
+                args.num_from = config['notification_text_from']
+            if 'notification_text_to' in config:
+                args.num_to = config['notification_text_to']
+
+    if(args.rtsp_stream is not None):
+        ip_pattern = re.compile('''((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)''')
+        camera_ip = ip_pattern.search(args.rtsp_stream).group(0)
+
+    if(camera_ip is None and (args.config_file is None or (args.pc_name is None and args.preset_file is None and args.rtsp_stream is None))):
+        print("A valid configuration file and rtsp stream are required to monitor presets.")
+
+    if(args.record_presets):
+        record_presets(args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.num_from, args.num_to, args.verbose)
+        exit()
+
+    if(camera_ip is not None and (args.ward is not None or args.pc_name is not Nonw) and args.preset_file is not None and preset_status_file is not None):
+        report_preset(0, args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, preset_status_file, args.num_from, args.num_to, args.verbose)
 

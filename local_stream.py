@@ -56,6 +56,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Update local server with JPG stream from camera for displaying on webpage.')
     parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
     parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
+    parser.add_argument('-p','--pc-name',type=str,help='System name that script is running on.')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
@@ -82,9 +83,4 @@ if __name__ == '__main__':
                 args.num_to = config['notification_text_to']
 
     if(local_stream is not None and local_stream_output is not None and local_stream_control is not None):
-        stream_local = threading.Thread(target = local_stream_process, args = (args.ward, local_stream, local_stream_output, local_stream_control, args.num_from, args.num_to, args.verbose))
-        stream_local.daemon = True
-        stream_local.start()
-
-    while(not gf.killer.kill_now):
-        time.sleep(1)
+        local_stream_process(args.ward if args.pc_name is None else args.pc_name, local_stream, local_stream_output, local_stream_control, args.num_from, args.num_to, args.verbose)
