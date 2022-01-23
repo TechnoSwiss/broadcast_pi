@@ -515,8 +515,6 @@ if __name__ == '__main__':
     try:
         if(args.control_file is not None and os.path.exists(args.control_file)):
             os.remove(args.control_file)
-        if(bandwidth_file is not None and os.path.exists(bandwidth_file)):
-            os.remove(bandwidth_file)
     except:
         if(args.verbose): print(traceback.format_exc())
         print("Failed cleaning up control files")
