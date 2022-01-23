@@ -173,6 +173,6 @@ if __name__ == '__main__':
 
     gf.killer = GracefulKiller()
 
-    report_preset("evergreen", "192.168.108.9", "presets.json", "html/status/preset", None, None, True)
-    #record_presets("evergreen", "192.168.108.9", "presets.json", None, None, True)
+    #report_preset("evergreen", "192.168.108.9", "presets.json", "html/status/preset", None, None, True)
+    record_presets("rpi", "192.168.108.9", "presets.json", None, None, True)
 
