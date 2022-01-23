@@ -120,15 +120,14 @@ $(function () {
     };
 
     let setPreset = (preset) => {
-	console.log(preset);
-	if(preset === undefined) {
+	preset = parseInt(preset);
+
+	if(preset === NaN || preset < 0) { // undefined
 	    $('.preset').removeClass('selected');
 	    return;
 	}
 	// moving
-	preset = parseInt(preset) || 0;
-
-	if(preset < 1) {
+	if(moving || preset === 0) {
 	    return;
 	}
 
@@ -257,12 +256,19 @@ $(function () {
 	ajaxAction(action);
     });
 
+    let moving = false;
+    let movingTO = undefined;
     $('html').on('click', '.preset', function () {
 	$('.preset').removeClass('selected');
 	$(this).addClass('selected');
         let preset = $(this).attr('preset');
 
-	ajaxAction('moving');
+	//ajaxAction('moving');
+	moving = true;
+	clearTimeout(movingTO);
+	movingTO = setTimeout(function() {
+	    moving = false;
+	}, 1000);
         $.ajax(`http://` + window.location.hostname + `:8080/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&${preset}`)
             .done(function (data) {
                 console.log(data);

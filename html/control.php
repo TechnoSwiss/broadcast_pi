@@ -35,8 +35,8 @@ if(preg_match("/resume/i", $action)) {
         shell_exec("rm $path/webstream");
     }
 } else if(preg_match("/moving/i", $action)) {
-    $presetfile = fopen("$path/preset", "w");
-    fwrite($presetfile, "0\n");
+    #$presetfile = fopen("$path/preset", "w");
+    #fwrite($presetfile, "0\n");
 }
 
 $schedule = [];
@@ -65,7 +65,7 @@ $preset = "";
 if(file_exists("$path/preset")) {
     $prsetcontent = file_get_contents("$path/preset");
 
-    $preset = preg_replace("/(\d+)[.\n]*/", "$1", $prsetcontent);
+    $preset = preg_replace("/(\-?\d+)[.\n]*/", "$1", $prsetcontent);
 }
 
 $data["buttonPaused"] = $buttonPaused;
