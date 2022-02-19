@@ -622,3 +622,13 @@ if __name__ == '__main__':
         print("Failed cleaning up control files")
         if(args.num_from is not None and args.num_to is not None):
             sms.send_sms(args.num_from, args.num_to, args.ward + " failed cleaning up control files!", args.verbose)
+    # set broadcast back to standard (write 0 to broadcast file) so next broadcast starts in high-bandwidth mode
+    try:
+        if(bandwidth_file is not None):
+            with open(bandwidth_file, "w") as bandwidthFile:
+                bandwidthFile.write("0")
+    except:
+        if(args.verbose): print(traceback.format_exc())
+        print("Failure clearing bandwidth file")
+        if(args.num_from is not None and args.num_to is not None):
+            sms.send_sms(args.num_from, args.num_to, args.ward + " had a failure clearing the bandwidth file!", args.verbose)
