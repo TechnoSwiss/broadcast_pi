@@ -154,4 +154,4 @@ if __name__ == '__main__':
         exit()
 
     #make sure link on hillsborostake.org is current
-    update_live_broadcast_link(videos[0], args, args.html_filename)
+    update_live_broadcast_link(videos[0], args, args.html_filename, None, args.verbose)
