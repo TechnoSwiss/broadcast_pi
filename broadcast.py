@@ -410,7 +410,7 @@ if __name__ == '__main__':
                     print("PTZ Problem")
                 time.sleep(3) # wait for camera to get in position before streaming, hand count for this is about 3 seconds.
             streaming = True
-            process = subprocess.Popen(split(broadcast_stream[broadcast_index]), shell=False, stderr=subprocess.DEVNULL)
+            process = subprocess.Popen(split(broadcast_stream[broadcast_index]), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
             update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
             while process.poll() is None:
@@ -483,7 +483,7 @@ if __name__ == '__main__':
                 except:
                     print("PTZ Problem")
             streaming = True
-            process = subprocess.Popen(split(ffmpeg_img), shell=False, stderr=subprocess.DEVNULL)
+            process = subprocess.Popen(split(ffmpeg_img), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
             update_status.update("pause", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
             while process.poll() is None:
@@ -573,11 +573,13 @@ if __name__ == '__main__':
 
         # delete all completed videos in Live list
         # delete all ready videos as they will cause problems for the new broadcast we will insert at the end of the script
-        for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to, args.verbose).items():
-            if((delete_complete and video_status == "complete")
-                or (delete_ready and (video_status == "ready"))): # if the broadcast got created but not bound it will be in created instead of ready state, since an un-bound broadcast can't unexpectedly accept a stream we'll leave these 
-                if(video_id != current_id): # if current_id is still in list, then we've skipped deleting it above, so don't delete now.
-                    youtube.videos().delete(id=video_id).execute()
+        broadcasts = yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to, args.verbose)
+        if(broadcasts is not None):
+            for video_id, video_status in broadcasts.items():
+                if((delete_complete and video_status == "complete")
+                    or (delete_ready and (video_status == "ready"))): # if the broadcast got created but not bound it will be in created instead of ready state, since an un-bound broadcast can't unexpectedly accept a stream we'll leave these 
+                    if(video_id != current_id): # if current_id is still in list, then we've skipped deleting it above, so don't delete now.
+                        youtube.videos().delete(id=video_id).execute()
     except:
         if(args.verbose): print(traceback.format_exc())
         if(gf.save_exceptions_to_file):

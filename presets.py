@@ -238,7 +238,7 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
             # so to prevent constant text messags only send message
             # after several consecutive failures
             if(gf.consecutive_ptz_status_failures >= gf.pts_status_retries):
-                if(gf.ptz_sms_sent <= ptz_sms_max):
+                if(gf.ptz_sms_sent <= gf.ptz_sms_max):
                     gf.ptx_sms_sent += 1
                     if(num_from is not None and num_to is not None):
                         sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
