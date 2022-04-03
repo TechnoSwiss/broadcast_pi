@@ -366,6 +366,9 @@ if __name__ == '__main__':
     broadcast_status_length = datetime.now()
     broadcast_status_check = datetime.now()
 
+    for ffmpeg_command in broadcast_stream:
+        if(args.verbose): print('\nffmpeg command : ' + ffmpeg_command)
+
     process = None
     streaming = False
     count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (args.ward.lower() + '_viewers.csv', youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose, args.extended))
@@ -385,6 +388,7 @@ if __name__ == '__main__':
         preset_report.start()
 
     broadcast_start = datetime.now()
+    stream_last = 0
 
     while(datetime.now() < stop_time and not gf.killer.kill_now):
         try:
@@ -398,7 +402,8 @@ if __name__ == '__main__':
         if(stream == 1 and streaming == False):
           try:
             print("main stream")
-            if(args.use_ptz):
+            if(args.use_ptz and stream_last == 0):
+                stream_last = stream
                 try:
                     subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&2"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at pulpit before streaming
                 except:
@@ -472,6 +477,7 @@ if __name__ == '__main__':
           try:
             print("pause stream")
             if(args.use_ptz):
+                stream_last = stream
                 try:
                     subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as paused
                 except:
@@ -574,6 +580,10 @@ if __name__ == '__main__':
                     youtube.videos().delete(id=video_id).execute()
     except:
         if(args.verbose): print(traceback.format_exc())
+        if(gf.save_exceptions_to_file):
+            with open("exception_error", 'a') as write_error:
+                write_error.write("\n\nfailed to delete broadcast\n")
+                write_error.write(traceback.format_exc())
         print("Failed to delete broadcasts")
         if(args.num_from is not None and args.num_to is not None):
             sms.send_sms(args.num_from, args.num_to, args.ward + " failed to delete broadcasts!", args.verbose)

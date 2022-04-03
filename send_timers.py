@@ -51,9 +51,11 @@ if __name__ == '__main__':
             send_text += '\n\n !!! BANDWIDTH TEST FAILED !!!'
 
     try:
-        ping_results = Popen(['ping', '-c', '2', '192.168.108.9'], stdout=PIPE)
-        send_text += '\n\n' + check_output(['grep', '-v', 'rtt'], stdin=ping_results.stdout).decode('utf-8')
-        ping_results.wait()
+        CAMERA_IP = '192.168.108.9'
+        ping_task = Popen(['ping', '-c', '2', CAMERA_IP], stdout=PIPE)
+        ping_results = check_output(['grep', '-v', 'rtt'], stdin=ping_task.stdout).decode('utf-8')
+        ping_task.wait()
+        send_text += '\n\nPTZ Camera : ' + ('Pass' if ' 0% packet loss' in ping_results  else '!!FAILED!!')
     except:
         if(args.verbose): print(traceback.format_exc())
         send_text += '\n\n !!! CAMERA PING FAILED !!!'
@@ -63,4 +65,4 @@ if __name__ == '__main__':
         sms.send_sms(args.num_from, args.num_to, send_text, args.verbose)
     else:
         print(send_text)
-        print("No numbers given, nothing to send")
+        print("\n\nNo numbers given, nothing to send")

@@ -1,4 +1,7 @@
 import socket
+import random
+import time
+
 from typing import Optional, Tuple
 
 from visca_over_ip.exceptions import ViscaException, NoQueryResponse
@@ -63,6 +66,12 @@ class Camera:
                     return response[1:-1]
                 elif not query:
                     return None
+
+            # delay for random time before retry
+            min_timeout = 0.5
+            max_timeout = 1.0
+            if(retry_num > 0):
+                time.sleep(random.uniform(min_timeout, max_timeout))
 
         if exception:
             raise exception
@@ -135,6 +144,72 @@ class Camera:
         """
         unpadded_bytes = bytes.fromhex(zero_padded.hex()[1::2])
         return int.from_bytes(unpadded_bytes, 'big', signed=signed)
+
+    def pantilt(self, pan_speed: int, tilt_speed: int, pan_position=None, tilt_position=None, relative=False):
+        """Commands the camera to pan and/or tilt.
+        You must specify both pan_position and tilt_position OR specify neither
+        :param pan_speed: -24 to 24 where negative numbers cause a left pan, 0 causes panning to stop,
+            and positive numbers cause a right pan
+        :param tilt_speed: -24 to 24 where negative numbers cause a downward tilt, 0 causes tilting to stop,
+            and positive numbers cause an upward tilt.
+        :param pan_position: if specified, the camera will move this distance or go to this absolute position
+            depending on the value of `relative`.
+            Valid values are integers by default between 0x2200 and 0xDE00.
+            Camera users may set more restrictive pan limits for a camera.
+        :param tilt_position: if specified, the camera will move this distance or go to this absolute position
+            depending on the value of `relative`.
+            Valid values are integers 0x1200 to 0xFC00 if image flip is on or 0xEE00 to 0x400 if image flip is off.
+            Camera users may set more restrictive tilt limits for a camera
+        :param relative: If set to True, the position will be relative instead of absolute.
+        :raises ViscaException: if invalid values are specified for positions
+        :raises ValueError: if invalid values are specified for speeds
+        """
+        speed_params = [pan_speed, tilt_speed]
+        position_params = [pan_position, tilt_position]
+        if position_params.count(None) == 1:
+            raise ValueError('You must specify both pan_position and tilt_position or nether')
+
+        if abs(pan_speed) > 24 or abs(tilt_speed) > 24:
+            raise ValueError('pan_speed and tilt_speed must be between -24 and 24 inclusive')
+
+        if not all(isinstance(param, int) or param is None for param in speed_params + position_params):
+            raise ValueError('All parameters must be ints or None')
+
+        pan_speed_hex = f'{abs(pan_speed):02x}'
+        tilt_speed_hex = f'{abs(tilt_speed):02x}'
+        
+        if None not in position_params:
+            pan_position_hex = ' '.join(['0' + char for char in f'{(pan_position & 0xFFFF):04x}'])
+            tilt_position_hex = ' '.join(['0' + char for char in f'{(tilt_position & 0xFFFF):04x}'])
+            relative_hex = '03' if relative else '02'
+
+            self._send_command(
+                '06' + relative_hex + pan_speed_hex + tilt_speed_hex + pan_position_hex + tilt_position_hex
+            )
+
+        else:
+            payload_start = '06 01'
+
+            def get_direction_hex(speed: int):
+                if speed > 0:
+                    return '01'
+                if speed < 0:
+                    return '02'
+                else:
+                    return '03'
+
+            self._send_command(
+                payload_start + pan_speed_hex + tilt_speed_hex +
+                get_direction_hex(pan_speed) + get_direction_hex(tilt_speed)
+            )
+
+    def zoom_to(self, position_int: int):
+        """Zooms to an absolute position
+        :param position: 0-1, where 1 is zoomed all the way in
+        """
+        #position_int = round(position * 16384)
+        position_hex = f'{position_int:04x}'
+        self._send_command('04 47 ' + ''.join(['0' + char for char in position_hex]))
 
     def get_pantilt_position(self) -> Tuple[int, int]:
         """:return: two signed integers representing the absolute pan and tilt positions respectively"""

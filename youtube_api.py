@@ -14,6 +14,9 @@ from googleapiclient.http import MediaFileUpload
 
 import google_auth # google_auth.py local file
 import sms #sms.py local file
+import global_file as gf # local file for sharing globals between files
+
+NUM_RETRIES = 5
 
 # YouTube no longer has a default broadcast, so the only ways to have a new broadcast created are to use the GoLive button in YouTube Studio, or to use the API and create a new live event. AutoStart is selected so the broadcast goes live as soon as you start streaming data to it. AutoStop is turned off so that if something causs a hiccup in the stream, YouTube won't close out the video before you're ready (had that happen on a few occasions) Because this stream is going out to families, including children I've set this to mark the videos as made for children. This causes many things to be tuned off (like monatization, personalized ads, comments and live chat) but I don't think any of those effect what we're trying to accomplish here.
 def create_live_event(youtube, title, description, starttime, duration, thumbnail, ward, num_from = None, num_to = None, verbose = False):
@@ -163,17 +166,29 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
     videos = {}
     nextPage = 0
     while(nextPage is not None):
-        try:
-            list_broadcasts = youtube.liveBroadcasts().list(
-                part='id,status',
-                broadcastStatus='all',
-            ).execute() if nextPage == 0 else youtube.liveBroadcasts().list(
-                part='id,status',
-                broadcastStatus='all',
-                pageToken=nextPage
-            ).execute()
-        except:
+        exception = None
+        for retry_num in range(NUM_RETRIES):
+            exception = None
+            try:
+                list_broadcasts = youtube.liveBroadcasts().list(
+                    part='id,status',
+                    broadcastStatus='all',
+                ).execute() if nextPage == 0 else youtube.liveBroadcasts().list(
+                    part='id,status',
+                    broadcastStatus='all',
+                    pageToken=nextPage
+                ).execute()
+            except Exception as exc:
+                exception = exc
+                if(verbose): print('!!Get Broadcasts Retry!!')
+                gf.sleep(1,3)
+                
+        if exception:
             if(verbose): print(traceback.format_exc())
+            if(gf.save_exceptions_to_file):
+                with open("exception_error", 'a') as write_error:
+                    write_error.write("\n\nfailed to get list of broadcasts\n")
+                    write_error.write(traceback.format_exc())
             print("Failed to get list of broadcasts")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed to get list of broadcasts!", verbose)
@@ -190,33 +205,53 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
     return(videos)
 
 def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
-    try:
-        broadcast = youtube.liveBroadcasts().list(
-            part='status',
-            broadcastType='all',
-            id=videoID
-        ).execute()
-        return(broadcast['items'][0]['status']['lifeCycleStatus'])
+    exception = None
+    for retry_num in range(NUM_RETRIES):
+        try:
+            broadcast = youtube.liveBroadcasts().list(
+                part='status',
+                broadcastType='all',
+                id=videoID
+            ).execute()
+            return(broadcast['items'][0]['status']['lifeCycleStatus'])
+        except Exception as exc:
+            exception = exc
+            if(verbose): print('!!Broadcast Status Retry!!')
+            gf.sleep(1, 3)
 
-    except:
+    if exception:
         if(verbose): print(traceback.format_exc())
+        if(gf.save_exceptions_to_file):
+            with open("exception_error", 'a') as write_error:
+                write_error.write("\n\nfailed to get broadcast status\n")
+                write_error.write(traceback.format_exc())
         print("Failed to get broadcast status")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get broadcast status!", verbose)
         return(None)
 
 def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
-    try:
-        stream = youtube.liveStreams().list(
-            part='status',
-            mine=True
-        ).execute()
-        healthStatus = stream['items'][0]['status']['healthStatus']['status']
-        description = stream['items'][0]['status']['healthStatus']['configurationIssues'][0]['description'] if 'configurationIssues' in stream['items'][0]['status']['healthStatus'] else ""
-        return(healthStatus, description)
+    exception = None
+    for retry_num in range(NUM_RETRIES):
+        try:
+            stream = youtube.liveStreams().list(
+                part='status',
+                mine=True
+            ).execute()
+            healthStatus = stream['items'][0]['status']['healthStatus']['status']
+            description = stream['items'][0]['status']['healthStatus']['configurationIssues'][0]['description'] if 'configurationIssues' in stream['items'][0]['status']['healthStatus'] else ""
+            return(healthStatus, description)
+        except Exception as exc:
+            exception = exc
+            if(verbose): print('!!Broadcast Health Retry!!')
+            gf.sleep(1, 3)
 
-    except:
+    if exception:
         if(verbose): print(traceback.format_exc())
+        if(gf.save_exceptions_to_file):
+            with open("exception_error", 'a') as write_error:
+                write_error.write("\n\nfailed to get broadcast health\n")
+                write_error.write(traceback.format_exc())
         print("Failed to get broadcast health")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get broadcast health!", verbose)
@@ -293,16 +328,27 @@ def bind_broadcast(youtube, videoID, streamID, ward, num_from = None, num_to = N
 
 # AutoStop is being disabled so that if the stream has problems (like the internet drops for a minute) YouTube won't automatically close out the video. This does mean that we have to manualy close it out when we're done with the broadcast/
 def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
-    try:
-        stopBroadcast = youtube.liveBroadcasts().transition(
-            broadcastStatus='complete',
-            id=videoID,
-            part='snippet,status'
-        ).execute()
+    exception = None
+    for retry_num in range(NUM_RETRIES):
+        try:
+            stopBroadcast = youtube.liveBroadcasts().transition(
+                broadcastStatus='complete',
+                id=videoID,
+                part='snippet,status'
+            ).execute()
+        except Exception as exc:
+            exception = exc
+            if(verbose): print('!!Stop Broadcast Retry!!')
+            gf.sleep(1, 3)
 
-    except:
+    if exception:
         if(verbose): print(traceback.format_exc())
         print("Failed to stop Broadcast")
+        if(gf.save_exceptions_to_file):
+            if(gf.save_exceptions_to_file):
+                with open("exception_error", 'a') as write_error:
+                    write_error.write("\n\nfailed to stop broadcast\n")
+                    write_error.write(traceback.format_exc())
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to stop broadcast!", verbose)
 
@@ -326,6 +372,10 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
                 continue # we'll retry getting concurrent viewers before we send an error message
             currentViewers = -1
             if(verbose): print(traceback.format_exc())
+            if(gf.save_exceptions_to_file):
+                with open("exception_error", 'a') as write_error:
+                    write_error.write("\n\nfailed to get concurrent viewers\n")
+                    write_error.write(traceback.format_exc())
             print("Failed to get concurrent viewers")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!", verbose)
