@@ -331,10 +331,6 @@ def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbo
             break
         except Exception as exc:
             exception = exc
-            #if('Redundant transition' in traceback.format_exc()):
-                # broadcast already transitioned to finished due to broadcast length set when broadcast was created
-            #    exception = None
-            #    break
             if(verbose): print('!!Stop Broadcast Retry!!')
             gf.sleep(1, 3)
 
