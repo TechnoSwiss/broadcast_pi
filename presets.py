@@ -48,7 +48,7 @@ def set_preset(ward, cam_ip, preset_file, preset, num_from = None, num_to = None
         if(verbose): print(traceback.format_exc())
         print("Failure connecting to VISCA Camera")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " had a failure connection to the VISCA port on the camera in set method!", verbose)
+            sms.send_sms(num_from, num_to, ward + " had a failure connecting to the VISCA port on the camera in set method!", verbose)
         return
 
     for preset_name in presets:
@@ -86,10 +86,7 @@ def set_preset(ward, cam_ip, preset_file, preset, num_from = None, num_to = None
             time.sleep(1)
         except:
             if(verbose): print(traceback.format_exc())
-            if(gf.save_exceptions_to_file):
-                with open("exception_error", 'a') as write_error:
-                    write_error.write("\n\nfailure getting camera PTZ\n")
-                    write_error.write(traceback.format_exc())
+            gf.log_exception(traceback.format_exc(), "failure getting camera PTZ")
             print("Failure getting camera PTZ position")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position in set method!", verbose)
@@ -112,9 +109,10 @@ def record_presets(ward, cam_ip, preset_file, num_from = None, num_to = None, ve
         ptz_cam = Camera(cam_ip)
     except:
         if(verbose): print(traceback.format_exc())
+        gf.log_exception(traceback.format_exc(), "failure connecting to the VISCA port on the camera")
         print("Failure connecting to VISCA Camera")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " had a failure connection to the VISCA port on the camera!", verbose)
+            sms.send_sms(num_from, num_to, ward + " had a failure connecting to the VISCA port on the camera!", verbose)
         return
     
     last_preset = None
@@ -227,10 +225,7 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
             time.sleep(1)
         except:
             if(verbose): print(traceback.format_exc())
-            if(gf.save_exceptions_to_file):
-                with open("exception_error", 'a') as write_error:
-                    write_error.write("\n\nfailure getting camera PTZ\n")
-                    write_error.write(traceback.format_exc())
+            gf.log_exception(traceback.format_exc(), "failure getting camera PTZ")
             print("Failure getting camera PTZ position")
             gf.consecutive_ptz_status_failures += 1
             # camera PTZ position failures are not a hugh isssue

@@ -178,6 +178,7 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
                     broadcastStatus='all',
                     pageToken=nextPage
                 ).execute()
+                break
             except Exception as exc:
                 exception = exc
                 if(verbose): print('!!Get Broadcasts Retry!!')
@@ -185,10 +186,7 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
                 
         if exception:
             if(verbose): print(traceback.format_exc())
-            if(gf.save_exceptions_to_file):
-                with open("exception_error", 'a') as write_error:
-                    write_error.write("\n\nfailed to get list of broadcasts\n")
-                    write_error.write(traceback.format_exc())
+            gf.log_exception(traceback.format_exc(), "failed to get list of broadcasts")
             print("Failed to get list of broadcasts")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed to get list of broadcasts!", verbose)
@@ -221,10 +219,7 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None,
 
     if exception:
         if(verbose): print(traceback.format_exc())
-        if(gf.save_exceptions_to_file):
-            with open("exception_error", 'a') as write_error:
-                write_error.write("\n\nfailed to get broadcast status\n")
-                write_error.write(traceback.format_exc())
+        gf.log_exception(traceback.format_exc(), "failed to get broadcast status")
         print("Failed to get broadcast status")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get broadcast status!", verbose)
@@ -248,10 +243,7 @@ def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None,
 
     if exception:
         if(verbose): print(traceback.format_exc())
-        if(gf.save_exceptions_to_file):
-            with open("exception_error", 'a') as write_error:
-                write_error.write("\n\nfailed to get broadcast health\n")
-                write_error.write(traceback.format_exc())
+        gf.log_exception(traceback.format_exc(), "failed to get broadcast health")
         print("Failed to get broadcast health")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get broadcast health!", verbose)
@@ -336,19 +328,20 @@ def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbo
                 id=videoID,
                 part='snippet,status'
             ).execute()
+            break
         except Exception as exc:
             exception = exc
+            #if('Redundant transition' in traceback.format_exc()):
+                # broadcast already transitioned to finished due to broadcast length set when broadcast was created
+            #    exception = None
+            #    break
             if(verbose): print('!!Stop Broadcast Retry!!')
             gf.sleep(1, 3)
 
     if exception:
         if(verbose): print(traceback.format_exc())
         print("Failed to stop Broadcast")
-        if(gf.save_exceptions_to_file):
-            if(gf.save_exceptions_to_file):
-                with open("exception_error", 'a') as write_error:
-                    write_error.write("\n\nfailed to stop broadcast\n")
-                    write_error.write(traceback.format_exc())
+        gf.log_exception(traceback.format_exc(), "failed to stop broadcast")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to stop broadcast!", verbose)
 
@@ -372,10 +365,7 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
                 continue # we'll retry getting concurrent viewers before we send an error message
             currentViewers = -1
             if(verbose): print(traceback.format_exc())
-            if(gf.save_exceptions_to_file):
-                with open("exception_error", 'a') as write_error:
-                    write_error.write("\n\nfailed to get concurrent viewers\n")
-                    write_error.write(traceback.format_exc())
+            gf.log_exception(traceback.format_exc(), "failed to get concurrent viewers")
             print("Failed to get concurrent viewers")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!", verbose)

@@ -1,6 +1,8 @@
 import random
 import time
 
+from datetime import datetime
+
 killer = None
 
 consecutive_ptz_status_failures = 0
@@ -13,3 +15,9 @@ save_exceptions_to_file = False
 def sleep(min_timeout = 0.1, max_timeout = 2):
     time.sleep(random.uniform(min_timeout, max_timeout))
     return
+
+def log_exception(exception: str, message: str):
+    if(save_exceptions_to_file):
+        with open("exception_error", 'a') as write_error:
+            write_error.write("\n\n" + message + datetime.now().strftime(" %m/%d/%Y, %H:%M:%S\n"))
+            write_error.write(exception)

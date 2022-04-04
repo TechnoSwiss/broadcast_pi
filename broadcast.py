@@ -62,10 +62,19 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
      # want to make sure that the current live broadcast is the one we think it is 
     time.sleep(15) # it takes a few seconds for the video to go live, so wait before we start checking
     verify_broadcast = False
+    start_verify = datetime.now()
+    start_failure_sms_sent = False
     while(not verify_broadcast):
         live_id = yt.get_live_broadcast(youtube, ward, num_from, num_to, verbose)
         if(live_id is None):
             print("No live broadcast found")
+            START_DELAY = 2
+            if((datetime.now() - start_verify) > timedelta(minutes=START_DELAY)):
+                if(not start_failure_sms_sent):
+                    start_failure_sms_sent = True
+                    print("Broadcast has failed to start within " + str(START_DELAY))
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, ward + " broadcast has failed to start!", verbose)
         if(live_id is not None and live_id != current_id):
             print("Live ID doesnt't match current ID, updating link")
             update_link.update_live_broadcast_link(live_id, args, html_filename, url_filename)
@@ -355,7 +364,7 @@ if __name__ == '__main__':
 
     #kick off broadcast
     ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
-    ffmpeg_lbw = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters_lbw + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if camera_parameters_lbw is not None else ffmpeg
+    ffmpeg_lbw = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters_lbw + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 1024k -maxrate 1024k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if camera_parameters_lbw is not None else ffmpeg
     ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -loop 1 -i ' + audio_only_image + ' -c:v libx264 -filter:v fps=fps=4 -g 7 -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if audio_only_image is not None else ffmpeg
     ffmpeg_img = 'ffmpeg -thread_queue_size 2048 -f lavfi -i anullsrc -thread_queue_size 2048 -loop 1 -i ' + args.pause_image + ' -c:v libx264 -filter:v fps=fps=4 -g 7 -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
 
@@ -367,7 +376,7 @@ if __name__ == '__main__':
     broadcast_status_check = datetime.now()
 
     for ffmpeg_command in broadcast_stream:
-        if(args.verbose): print('\nffmpeg command : ' + ffmpeg_command)
+        if(args.verbose): print("\nffmpeg command : " + ffmpeg_command + "\n")
 
     process = None
     streaming = False
@@ -411,11 +420,13 @@ if __name__ == '__main__':
                 time.sleep(3) # wait for camera to get in position before streaming, hand count for this is about 3 seconds.
             streaming = True
             process = subprocess.Popen(split(broadcast_stream[broadcast_index]), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            process_terminate = False
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
             update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
             while process.poll() is None:
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
                 if(os.path.exists(args.control_file) or datetime.now() > stop_time or gf.killer.kill_now):
+                    process_terminate = True
                     process.terminate()
                     process.wait()
                     break;
@@ -427,6 +438,7 @@ if __name__ == '__main__':
                                 if(broadcast_index != broadcast_index_new):
                                     broadcast_index = broadcast_index_new
                                     print("Setting broadcast to index " + str(broadcast_index))
+                                    process_terminate = True
                                     process.terminate()
                                     process.wait()
                                     break;
@@ -460,12 +472,18 @@ if __name__ == '__main__':
                         broadcast_status_length = datetime.now()
                         if(args.num_from is not None and args.num_to is not None):
                             sms.send_sms(args.num_from, args.num_to, args.ward + " reducing broadcast bandwidth to index " + str(broadcast_index) + "!", args.verbose)
+                        process_terminate = True
                         process.terminate()
                         process.wait()
                         break;
                     if(status != 'bad'):
                         broadcast_status_length = datetime.now()
                 time.sleep(1)
+                # if something is using the camera after the sleep we'll
+                # end up wiht process.poll() != None and we'll get stuck
+                # in an endless loop here
+                if(not process_terminate and process.poll() is not None):
+                    print("!!Main Stream Died!!")
             streaming = False
           except:
             if(args.verbose): print(traceback.format_exc())
@@ -484,15 +502,22 @@ if __name__ == '__main__':
                     print("PTZ Problem")
             streaming = True
             process = subprocess.Popen(split(ffmpeg_img), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            process_terminate = False
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
             update_status.update("pause", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
             while process.poll() is None:
                 stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, args.num_from, args.num_to)
                 if(not os.path.exists(args.control_file) or datetime.now() > stop_time or gf.killer.kill_now):
+                    process_terminate = True
                     process.terminate()
                     process.wait()
                     break;
                 time.sleep(1)
+                # if something is using the camera after the sleep we'll
+                # end up wiht process.poll() != None and we'll get stuck
+                # in an endless loop here
+                if(not process_terminate and process.poll() is not None):
+                    print("!!Pause Stream Died!!")
             streaming = False
           except:
             if(args.verbose): print(traceback.format_exc())
@@ -582,10 +607,7 @@ if __name__ == '__main__':
                         youtube.videos().delete(id=video_id).execute()
     except:
         if(args.verbose): print(traceback.format_exc())
-        if(gf.save_exceptions_to_file):
-            with open("exception_error", 'a') as write_error:
-                write_error.write("\n\nfailed to delete broadcast\n")
-                write_error.write(traceback.format_exc())
+        gf.log_exception(traceback.format_exc(), "failed to delete broadcast")
         print("Failed to delete broadcasts")
         if(args.num_from is not None and args.num_to is not None):
             sms.send_sms(args.num_from, args.num_to, args.ward + " failed to delete broadcasts!", args.verbose)
@@ -644,3 +666,6 @@ if __name__ == '__main__':
         print("Failure clearing bandwidth file")
         if(args.num_from is not None and args.num_to is not None):
             sms.send_sms(args.num_from, args.num_to, args.ward + " had a failure clearing the bandwidth file!", args.verbose)
+
+    # leave terminal in a working state on exit
+    os.system('stty sane')

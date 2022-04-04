@@ -36,14 +36,21 @@ def local_stream_process(ward, local_stream, local_stream_output, local_stream_c
         try:
             if(os.path.exists(local_stream_control)):
                 print("Starting Local Stream")
-                process = subprocess.Popen(split(local_stream_process), shell=False, stderr=subprocess.DEVNULL)
+                process = subprocess.Popen(split(local_stream_process), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                process_terminate = False
                 while process.poll() is None:
                     if(not os.path.exists(local_stream_control)):
                         print("Stopping Local Stream")
+                        process_terminate = True
                         process.terminate()
                         process.wait()
                         break;
                     time.sleep(1)
+                    # if something is using the camera after the sleep we'll 
+                    # end up wiht process.poll() != None and we'll get stuck
+                    # in an endless loop here
+                    if(not process_terminate and process.poll() is not None):
+                        print("!!Local Stream Died!!")
             time.sleep(1)
         except:
             if(verbose): print(traceback.format_exc())
