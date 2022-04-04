@@ -15,6 +15,8 @@ from visca_over_ip.camera import *
 import sms # sms.py local file
 import global_file as gf
 
+NUM_RETRIES = 5
+
 class GracefulKiller:
   kill_now = False
   def __init__(self):
@@ -178,13 +180,22 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
             sms.send_sms(num_from, num_to, ward + " had an error reading the preset file!", verbose)
         return
 
-    try:
-        ptz_cam = Camera(cam_ip)
-    except:
+    exception = None
+    for retry_num in range(NUM_RETRIES):
+        exception = None
+        try:
+            ptz_cam = Camera(cam_ip)
+            break
+        except Exception as exc:
+            exception = exc
+            if(verbose): print('!!VISCA Connection Retry!!')
+            gf.sleep(0.5,1)
+
+    if exception:
         if(verbose): print(traceback.format_exc())
         print("Failure connecting to VISCA Camera")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " had a failure connection to the VISCA port on the camera!", verbose)
+            sms.send_sms(num_from, num_to, ward + " had a failure connecting to the VISCA port on the camera!", verbose)
         return
     
     while(not gf.killer.kill_now):
