@@ -205,6 +205,7 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
 def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
     exception = None
     for retry_num in range(NUM_RETRIES):
+        exception = None
         try:
             broadcast = youtube.liveBroadcasts().list(
                 part='status',
@@ -228,6 +229,7 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None,
 def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
     exception = None
     for retry_num in range(NUM_RETRIES):
+        exception = None
         try:
             stream = youtube.liveStreams().list(
                 part='status',
@@ -322,6 +324,7 @@ def bind_broadcast(youtube, videoID, streamID, ward, num_from = None, num_to = N
 def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
     exception = None
     for retry_num in range(NUM_RETRIES):
+        exception = None
         try:
             stopBroadcast = youtube.liveBroadcasts().transition(
                 broadcastStatus='complete',
