@@ -9,6 +9,7 @@
 import argparse
 import signal
 import os
+import sys
 import traceback
 import re
 import pickle
@@ -667,5 +668,6 @@ if __name__ == '__main__':
         if(args.num_from is not None and args.num_to is not None):
             sms.send_sms(args.num_from, args.num_to, args.ward + " had a failure clearing the bandwidth file!", args.verbose)
 
-    # leave terminal in a working state on exit
-    os.system('stty sane')
+    # leave terminal in a working state on exit but only if running from command line
+    if sys.stdin and sys.stdin.isatty():
+        os.system('stty sane')

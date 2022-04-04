@@ -346,8 +346,9 @@ def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbo
 
 # Gets the current number of viewers of the video specified by videoID, so those numbers can be reported out
 def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
-    retries = 2
-    while(retries > 0):
+    exception = None
+    for retry_num in range(NUM_RETRIES):
+        exception = None
         try:
             liveDetails = youtube.videos().list(
                 part='liveStreamingDetails',
@@ -357,17 +358,18 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
                 currentViewers = liveDetails['items'][0]['liveStreamingDetails']['concurrentViewers']
             else:
                 currentViewers = 0
-            retries = 0 # we've successfully gotten concurrent viewers, no need to retry
-        except:
-            retries = retries - 1
-            if(retries > 0):
-                continue # we'll retry getting concurrent viewers before we send an error message
-            currentViewers = -1
-            if(verbose): print(traceback.format_exc())
-            gf.log_exception(traceback.format_exc(), "failed to get concurrent viewers")
-            print("Failed to get concurrent viewers")
-            if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!", verbose)
+            break
+        except Exception as exc:
+            exception = exc
+            if(verbose): print('!!Concurrent Viewers Retry!!')
+            gf.sleep(1, 3)
+    if exception:
+        currentViewers = -1
+        if(verbose): print(traceback.format_exc())
+        gf.log_exception(traceback.format_exc(), "failed to get concurrent viewers")
+        print("Failed to get concurrent viewers")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!", verbose)
 
     return(currentViewers)
 
