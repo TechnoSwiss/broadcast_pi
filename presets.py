@@ -241,13 +241,18 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
             gf.consecutive_ptz_status_failures += 1
             # camera PTZ position failures are not a hugh isssue
             # the random wait on retry didn't seem to fix the issue
-            # so to prevent constant text messags only send message
+            # so to prevent constant text messages only send message
             # after several consecutive failures
             if(gf.consecutive_ptz_status_failures >= gf.pts_status_retries):
+                # if we've reached this state it's likely the next request
+                # will also fail, so zero the counter to prevent double
+                # messages
+                gf.consecutive_ptz_status_failures = 0
                 if(gf.ptz_sms_sent <= gf.ptz_sms_max):
                     gf.ptz_sms_sent += 1
                     if(num_from is not None and num_to is not None):
                         sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
+            time.sleep(1)
 
     ptz_cam.close_connection()
 
