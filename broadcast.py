@@ -89,6 +89,7 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
     print("Live broadcast ID has been verified.")
 
 if __name__ == '__main__':
+  try:
     parser = argparse.ArgumentParser(description='Broadcast Live Ward Meeting to YouTube')
     parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
     parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
@@ -671,3 +672,10 @@ if __name__ == '__main__':
     # leave terminal in a working state on exit but only if running from command line
     if sys.stdin and sys.stdin.isatty():
         os.system('stty sane')
+
+  except:
+    if(verbose): print(traceback.format_exc())
+    gf.log_exception(traceback.format_exc(), "crashed out of broadcast.py")
+    print("Crashed out of broadcast.py")
+    if(num_from is not None and num_to is not None):
+        sms.send_sms(num_from, num_to, ward + " crashed out of broadcast.py!", verbose)    

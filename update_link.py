@@ -12,11 +12,14 @@ import pickle
 
 import google_auth # google_auth.py local file
 import sms #sms.py local file
+import global_file as gf # local file for sharing globals between files
 
 import paramiko
 from paramiko import SSHClient
 from scp import SCPClient
 from datetime import datetime
+
+NUM_RETRIES = 5
 
 #SSH id_rsa key decryption password file (for SSH upload of HTML file to website for sharing YouTube Unlisted URL
 #file is just a single ascii line plain text password
@@ -86,23 +89,33 @@ def update_live_broadcast_link(live_broadcast_id, args, path_filename = None, fi
     ssh = SSHClient()
     
     if os.path.exists(SSH_RSA_KEY_PASS) and os.path.exists(args.home_dir + '/.ssh/id_rsa'):
-        try:
-            with open(SSH_RSA_KEY_PASS, 'r') as f:
-                ssh_pass = f.read().replace('\n', '')
-                ssh.load_system_host_keys()
-                key = paramiko.RSAKey.from_private_key_file(args.home_dir + '/.ssh/id_rsa', password=ssh_pass)
-                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(args.host_name, username=args.user_name, pkey=key)
-                with SCPClient(ssh.get_transport()) as scp:
-                    if(path_filename is not None):
-                        scp.put('link.html', path_filename)
-                    else:
-                        scp.put('link.html', 'public_html/broadcast/' + (filename if (filename is not None) else args.ward.lower()) + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
-        except:
+        exception = None
+        for retry_num in range(NUM_RETRIES):
+            exception = None
+            try:
+                with open(SSH_RSA_KEY_PASS, 'r') as f:
+                    ssh_pass = f.read().replace('\n', '')
+                    ssh.load_system_host_keys()
+                    key = paramiko.RSAKey.from_private_key_file(args.home_dir + '/.ssh/id_rsa', password=ssh_pass)
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(args.host_name, username=args.user_name, pkey=key)
+                    with SCPClient(ssh.get_transport()) as scp:
+                        if(path_filename is not None):
+                            scp.put('link.html', path_filename)
+                        else:
+                            scp.put('link.html', 'public_html/broadcast/' + (filename if (filename is not None) else args.ward.lower()) + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
+                break
+            except Exception as exc:
+                exception = exc
+                if(verbose): print('!!Host Key Failure!!')
+                gf.sleep(0.5,2)
+
+        if exception:
             if(verbose): print(traceback.format_exc())
             print("SSH Host key failure.")
             if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward +  " Ward stake website host key failure!", verbose)
-            exit()
+            # this doesn't need
+            return
     else:
         if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube SSH Key and Password files are required!", verbose)
         print("SSH Key or Password file is missing for link upload.")
