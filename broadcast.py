@@ -11,6 +11,7 @@ import signal
 import os
 import sys
 import traceback
+import faulthandler
 import re
 import pickle
 import subprocess
@@ -44,10 +45,18 @@ class GracefulKiller:
     print('\n!!Received SIGINT or SIGTERM!!')
     self.kill_now = True
 
+# this was the original Ctrl+C handler, this shoudln't be getting called anywhere now that GracefulKiller is being used
 def signal_handler(sig, frame):
   print('\n!!Exiting from Ctrl+C or SIGTERM!!')
   sys.exit(0)
 
+# sigfault happening and need to at least be alerted when application fails because of this so we can restart it
+def signal_sigfault(sig, frame):
+    print("!!SEGFAULT!!")
+    faulthandler.dump_traceback(file=sys.stdout, all_threads=True)
+    if(args.num_from is not None and args.num_to is not None):
+        sms.send_sms(args.num_from, args.num_to, args.ward + " SEGFAULT occured!", args.verbose)
+    sys.exit(0)
 
 def check_extend(extend_file, stop_time, status_file, ward, num_from = None, num_to = None):
     global extend_time
@@ -127,6 +136,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     gf.killer = GracefulKiller()
+    signal.signal(signal.SIGSEGV, signal_sigfault)
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
     delete_ready = True # script will create a new broadcast endpoint after the delete process, an existing ready broadcasts will interfere since we're not creating seperate endpoints for each broadcast, so delete any ready broadcasts to prevent problems

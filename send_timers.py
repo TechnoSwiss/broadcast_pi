@@ -22,6 +22,9 @@ if __name__ == '__main__':
     temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1]
     send_text = 'System: ' + args.pc_name + ', temperature is: ' + temp + '\n\n'
 
+    if os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/testing'):
+        send_text += '!!TESTING ACTIVE!!\n\n\n'
+
     if(args.wards is not None):
         timers = timers.splitlines(keepends=True)
         wards = args.wards + ',ACTIVATES' # adding this so we get the header
