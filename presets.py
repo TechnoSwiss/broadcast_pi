@@ -236,10 +236,9 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
             time.sleep(1)
         except:
             if(verbose): print(traceback.format_exc())
-            gf.log_exception(traceback.format_exc(), "failure getting camera PTZ")
             print("Failure getting camera PTZ position")
             gf.consecutive_ptz_status_failures += 1
-            # camera PTZ position failures are not a hugh isssue
+            # camera PTZ position failures are not a huge isssue
             # the random wait on retry didn't seem to fix the issue
             # so to prevent constant text messages only send message
             # after several consecutive failures
