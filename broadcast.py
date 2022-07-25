@@ -19,6 +19,9 @@ import time
 import threading
 import json
 
+from subprocess import check_output
+import socket
+
 from shlex import split
 from datetime import datetime, timedelta
 from dateutil import tz # pip install python-dateutil
@@ -490,6 +493,32 @@ if __name__ == '__main__':
                     if(verbose): print(status_description)
                     if(status == 'bad' and (datetime.now() - broadcast_status_length) > timedelta(minutes=broadcast_downgrade_delay[broadcast_index])):
                         broadcast_index += 1
+                        # !!!! START DEBUG CODE !!!!
+                        # if we're going to reduce the broadcast bandwidth, we want to collect some information so we can try to determine why the bandwidth needs to be reduced.
+                        url1 = 'htop1' + time.strftime("%Y%m%d-%H%M%S")  + '.html'
+                        url2 = 'htop2' + time.strftime("%Y%m%d-%H%M%S")  + '.html'
+                        htop = check_output("echo q | htop | aha --black --line-fix > html/" + url1, shell=True)
+                        htop = check_output("echo q | htop | aha --black --line-fix > html/" + url2, shell=True)
+                        temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1]
+                        freq = check_output(['vcgencmd', 'measure_clock arm']).decode('utf-8').split('=')[-1]
+                        throttled = check_output(['vcgencmd', 'get_throttled']).decode('utf-8').split('=')[-1]
+                        send_text = 'Ward: ' + args.ward + ' temperature is: ' + temp + ' and CPU freq.: ' + freq + ' with throttled: ' + throttled + '\n\n'
+                        try:
+                            bandwidth = check_output(['speedtest']).decode('utf-8').splitlines(keepends=True)
+                            for line in bandwidth:
+                                if(':' in line and 'URL' not in line):
+                                    send_text += line
+                        except:
+                            send_text += '\n\n !!! BANDWIDTH TEST FAILED !!!'
+
+                        send_text += '\n http://' + socket.gethostname() + '.hos-conf.local/' + url1
+                        send_text += '\n http://' + socket.gethostname() + '.hos-conf.local/' + url2
+
+                        if(num_from is not None and num_to is not None):
+                            print(send_text)
+                            sms.send_sms(num_from, num_to, send_text, verbose)
+                        # !!!! END DEBUG CODE !!!!
+
                         if(broadcast_index >= len(broadcast_stream)): broadcast_index = len(broadcast_stream - 1)
                         print("Reducing broadcast bandwidth, switching to index " + str(broadcast_index))
                         try:
@@ -512,10 +541,12 @@ if __name__ == '__main__':
                         broadcast_status_length = datetime.now()
                 time.sleep(1)
                 # if something is using the camera after the sleep we'll
-                # end up wiht process.poll() != None and we'll get stuck
+                # end up with process.poll() != None and we'll get stuck
                 # in an endless loop here
                 if(not process_terminate and process.poll() is not None):
                     print("!!Main Stream Died!!")
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, args.ward + " main stream died!", verbose)
             streaming = False
           except:
             if(verbose): print(traceback.format_exc())
