@@ -17,6 +17,7 @@
 import argparse
 import os
 import traceback
+import json
 from twilio.rest import Client # pip3 install twilio
 
 #Twilio account sid and auth token
@@ -52,10 +53,43 @@ def send_sms(num_from, num_to, sms_message, verbose = False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Send SMS Message')
-    parser.add_argument('-m','--message',type=str,required=True,help="Message text")
-    parser.add_argument('-F','--num-from',type=str,required=True,help='SMS notification from number - Twilio account number')
-    parser.add_argument('-T','--num-to',type=str,required=True,help='SMS number to send notification to')
+    parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
+    parser.add_argument('-m','--message',required=True,type=str,help="Message text")
+    parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
+    parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
   
-    send_sms(args.num_from, args.num_to, args.message, args.verbose)
+    verbose = args.verbose
+    ward = None
+    num_from = args.num_from
+    num_to = args.num_to
+
+    if(args.config_file is not None):
+        if("/" in args.config_file):
+            config_file = args.config_file
+        else:
+            config_file =  os.path.exists(os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file)
+    if(args.config_file is not None and os.path.exists(args.config_file)):
+        with open(args.config_file, "r") as configFile:
+            config = json.load(configFile)
+
+            # check for keys in config file
+            if 'broadcast_ward' in config:
+                ward = config['broadcast_ward']
+            if 'notification_text_from' in config:
+                num_from = config['notification_text_from']
+            if 'notification_text_to' in config:
+                num_to = config['notification_text_to']
+
+    if(num_from is None):
+        print("!!Number From is a required argument!!")
+        exit()
+    if(num_to is None):
+        print("!!Number To is a required argument!!")
+        exit()
+
+    if(ward is not None):
+        args.message = ward + " : " + args.message
+    send_sms(num_from, num_to, args.message, verbose)
+8
