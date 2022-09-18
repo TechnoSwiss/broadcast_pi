@@ -14,6 +14,8 @@ ptz_sms_max = 5
 save_exceptions_to_file = True
 global_lock = threading.Lock()
 
+current_id = None
+
 def sleep(min_timeout = 0.1, max_timeout = 2):
     time.sleep(random.uniform(min_timeout, max_timeout))
     return

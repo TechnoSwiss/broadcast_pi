@@ -92,10 +92,13 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
                         sms.send_sms(num_from, num_to, ward + " broadcast has failed to start!", verbose)
         if(live_id is not None and live_id != current_id):
             print("Live ID doesnt't match current ID, updating link")
+            print(current_id + " => " + live_id)
             update_link.update_live_broadcast_link(live_id, args, html_filename, url_filename)
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " link ID updated!", verbose)
             current_id = live_id
+            gf.current_id = current_id # setting this will allow updating the current_id in other threads
+
         if(current_id == live_id):
             verify_broadcast = True
         time.sleep(5)
@@ -487,6 +490,11 @@ if __name__ == '__main__':
                 # if we're already at the lowest bandwidth broadcast there's no reason to keep checking to see if we need to reduce bandwidth
                 if(broadcast_index < (len(broadcast_stream) - 1) and (datetime.now() - broadcast_status_check) > timedelta(minutes=1)):
                     # every minute grab the broadcast status so we can reduce the bandwidth if there's problems
+                    # if gf.current_id has been defined, then verify_life_broadcast detected a change in the video id we're using, so we need to update for that
+                    if(gf.current_id and gf.current_id != current_id):
+                        print("Live ID doesn't match Current ID, updating status")
+                        print(current_id + " => " + gf.current_id)
+                        current_id = gf.current_id
                     status, status_description = yt.get_broadcast_health(youtube, current_id, args.ward, num_from, num_to, verbose)
                     broadcast_status_check = datetime.now()
                     if(verbose): print(status)
@@ -591,6 +599,12 @@ if __name__ == '__main__':
 
         time.sleep(0.1)
 
+    # if gf.current_id has been defined, then verify_life_broadcast detected a change in the video id we're using, so we need to update for that
+    if(gf.current_id and gf.current_id != current_id):
+        print("Live ID doesn't match Current ID, updating cleanup")
+        print(current_id + " => " + gf.current_id)
+        current_id = gf.current_id
+
     if(args.use_ptz):
         subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as stopped
 
@@ -667,13 +681,20 @@ if __name__ == '__main__':
                 if((delete_complete and video_status == "complete")
                     or (delete_ready and (video_status == "ready"))): # if the broadcast got created but not bound it will be in created instead of ready state, since an un-bound broadcast can't unexpectedly accept a stream we'll leave these 
                     if(video_id != current_id): # if current_id is still in list, then we've skipped deleting it above, so don't delete now.
-                        youtube.videos().delete(id=video_id).execute()
+                        try:
+                            youtube.videos().delete(id=video_id).execute()
+                        except:
+                            if(verbose): print(traceback.format_exc())
+                            gf.log_exception(traceback.format_exc(), "failed to delete complete/ready broadcast(s)")
+                            print("Failed to delete complete/ready broadcast(s)")
+                            if(num_from is not None and num_to is not None):
+                                sms.send_sms(num_from, num_to, args.ward + " failed to delete complete/ready broadcast(s)!", verbose)
     except:
         if(verbose): print(traceback.format_exc())
         gf.log_exception(traceback.format_exc(), "failed to delete broadcast")
-        print("Failed to delete broadcasts")
+        print("Failed to delete broadcast")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, args.ward + " failed to delete broadcasts!", verbose)
+            sms.send_sms(num_from, num_to, args.ward + " failed to delete broadcast!", verbose)
 
     # create next weeks broadcast if recurring
     # don't create a new broadcast is forcibly killing process

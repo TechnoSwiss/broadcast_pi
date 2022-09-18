@@ -13,11 +13,17 @@ import google_auth # google_auth.py local file
 import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
 import send_email # send_email.py localfile
+import global_file as gf # local file for sharing globals between files
 
 def count_viewers(filename, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False):
     try:
         with open(filename, 'w') as outFile:
             while True:
+                # check video id in global file to see if we need to update the video id that we're monitoring
+                if(gf.current_id and gf.current_id != videoID):
+                    print("Live ID doesn't match Current ID, updating count")
+                    print(videoID + " => " + gf.current_id)
+                    videoID = gf.current_id
                 if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to, verbose) == "complete"):
                     break
                 if extended:
