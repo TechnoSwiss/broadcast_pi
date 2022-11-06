@@ -36,7 +36,14 @@ API_VERSION = 'v3'
 
 def store_authenticated_service(credentials_file):
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
-    credentials = flow.run_console()
+    print("Before using URL setup tunnel from PC to broadcast system port L8088 localhost:8088")
+
+    credentials = flow.run_local_server(
+            host='localhost',
+            port=8088,
+            authorization_prompt_message='Please visit this URL: {url}',
+            success_message='The auth flow is complete; you may close this window.',
+            open_browser=False)
 
     with open(credentials_file, 'wb') as f:
         pickle.dump(credentials, f)

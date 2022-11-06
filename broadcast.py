@@ -60,7 +60,7 @@ def signal_sigfault(sig, frame):
     print("!!SEGFAULT!!")
     faulthandler.dump_traceback(file=sys.stdout, all_threads=True)
     if(num_from is not None and num_to is not None):
-        sms.send_sms(num_from, num_to, args.ward + " SEGFAULT occured!", verbose)
+        sms.send_sms(num_from, num_to, ward + " SEGFAULT occured!", verbose)
     sys.exit(0)
 
 def check_extend(extend_file, stop_time, status_file, ward, num_from = None, num_to = None):
@@ -153,6 +153,7 @@ if __name__ == '__main__':
     verbose = args.verbose
     num_from = args.num_from
     num_to = args.num_to
+    ward = args.ward
 
     if(args.delete_control is not None):
         if(args.delete_control & 0x01):
@@ -197,7 +198,9 @@ if __name__ == '__main__':
             if 'testing' in config:
                 testing |= config['testing']
             if 'broadcast_ward' in config:
-                args.ward = config['broadcast_ward']
+                ward = config['broadcast_ward']
+                # some scripts still get information passed via the args dictionary so we need to make sure it's up-to-date
+                args.ward = ward
             if 'broadcast_title' in config:
                 args.title = config['broadcast_title']
             if 'broadcast_title_card' in config:
@@ -288,13 +291,17 @@ if __name__ == '__main__':
                 email_url_addresses = config['email_url_addresses']
             if 'notification_text_from' in config:
                 num_from = config['notification_text_from']
+                # some scripts still get information passed via the args dictionary so we need to make sure it's up-to-date
+                args.num_from = num_from
             if 'notification_text_to' in config:
                 num_to = config['notification_text_to']
+                # some scripts still get information passed via the args dictionary so we need to make sure it's up-to-date
+                args.num_to = num_to
 
     if(args.audio_gain is not None and args.audio_gate is not None):
         print("!!Audio Gain and Audio Gate are mutually exclusive!!")
         exit()
-    if(args.ward is None):
+    if(ward is None):
         print("!!Ward is required argument!!")
         exit()
     if(args.youtube_key is None):
@@ -304,9 +311,9 @@ if __name__ == '__main__':
     if(testing):
         print("!!testing is active!!")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, args.ward + " testing is active!", verbose)
+            sms.send_sms(num_from, num_to, ward + " testing is active!", verbose)
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, args.ward, num_from, num_to, verbose)
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, ward, num_from, num_to, verbose)
 
     update_start_stop = False
     if(datetime.now() >= stop_time):
@@ -329,16 +336,16 @@ if __name__ == '__main__':
         stop_time = start_time + timedelta(hours=int(H), minutes=int(M),seconds=int(S))
         print("stop_time updated to: " + stop_time.strftime("%d-%b-%Y %H:%M:%S"))
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, args.ward + " stop time was less than start time! stop time update to: " + stop_time.strftime("%d-%b-%Y %H:%M:%S"), verbose)
+            sms.send_sms(num_from, num_to, ward + " stop time was less than start time! stop time update to: " + stop_time.strftime("%d-%b-%Y %H:%M:%S"), verbose)
     else:
         print("stop_time : " + stop_time.strftime("%d-%b-%Y %H:%M:%S"))
 
     if not os.path.exists(args.pause_image):
-        if(num_from is not None): sms.send_sms(num_from, num_to, args.ward + " no pause image available!", verbose)
+        if(num_from is not None): sms.send_sms(num_from, num_to, ward + " no pause image available!", verbose)
         print("Pause image not found, image is required for paused stream.")
         exit()
 
-    credentials_file = args.ward.lower() + '.auth'
+    credentials_file = ward.lower() + '.auth'
     
     audio_delay = ''
     video_delay = ''
@@ -365,6 +372,13 @@ if __name__ == '__main__':
     # remove extend file when we first start so we don't accidently extend the broadcast at the begining
     if os.path.exists(args.extend_file):
         os.remove(args.extend_file)
+
+    # check if ffmpeg is already running, which would signal that previous broadcast didn't end correctly, and bad things will happen
+    ps_aux = check_output(['ps', 'aux']).decode('utf-8')
+    if 'ffmpeg' in ps_aux:
+        # ffmpeg is still running, we don't want to handel this here, so just send a notification
+        print("ffmpeg still running from previous broadcast.")
+        if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward ffmpeg still running from previous broadcast!", verbose)
  
     #authenticate with YouTube API
     exception = None
@@ -379,23 +393,23 @@ if __name__ == '__main__':
     if(exception):
         print(traceback.format_exc())
         print("YouTube authentication failure.")
-        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward +  " Ward YouTube authentication failure!", verbose)
+        if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward YouTube authentication failure!", verbose)
         # we can't continue if not authenticated to YouTube so exit out
         exit()
   
     #get next closest broadcast endpoint from youtube (should only be one)
-    current_id = yt.get_next_broadcast(youtube, args.ward, num_from, num_to, verbose)
+    current_id = yt.get_next_broadcast(youtube, ward, num_from, num_to, verbose)
     if(current_id is None):
         print("No broadcast found, attempting to create broadcast.")
-        current_id = insert_event.insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, args.ward, num_from, num_to, verbose)
+        current_id = insert_event.insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, ward, num_from, num_to, verbose)
         if(current_id is None):
             print("Failed to get current broadcast, and broadcast creation also failed!")
-            if(num_from is not None): sms.send_sms(num_from, num_to, args.ward + " Ward failed to get current broadcast, and broadcast creation also failed!", verbose)
+            if(num_from is not None): sms.send_sms(num_from, num_to, ward + " Ward failed to get current broadcast, and broadcast creation also failed!", verbose)
             exit()
     
     # if we have a broadcast status of created (which is what we should be getting here each time) then we need to bind the broadcast before we can use it
-    if(yt.get_broadcast_status(youtube, current_id, args.ward, num_from, num_to, verbose == 'created')):
-        insert_event.bind_event(youtube, current_id, args.ward, num_from, num_to, verbose)
+    if(yt.get_broadcast_status(youtube, current_id, ward, num_from, num_to, verbose == 'created')):
+        insert_event.bind_event(youtube, current_id, ward, num_from, num_to, verbose)
 
     #make sure link on web host is current
     update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
@@ -418,19 +432,19 @@ if __name__ == '__main__':
 
     process = None
     streaming = False
-    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (args.ward.lower() + '_viewers.csv', youtube, current_id, args.ward, num_from, num_to, verbose, args.extended))
+    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (ward.lower() + '_viewers.csv', youtube, current_id, ward, num_from, num_to, verbose, args.extended))
     count_viewers.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
     count_viewers.start()
     print("Starting stream...")
-    verify_broadcast = threading.Thread(target = verify_live_broadcast, args = (youtube, args.ward, args, current_id, args.html_filename, args.url_filename, num_from, num_to, verbose))
+    verify_broadcast = threading.Thread(target = verify_live_broadcast, args = (youtube, ward, args, current_id, args.html_filename, args.url_filename, num_from, num_to, verbose))
     verify_broadcast.daemon = True
     verify_broadcast.start()
     if(local_stream is not None and local_stream_output is not None and local_stream_control is not None):
-        stream_local = threading.Thread(target = ls.local_stream_process, args = (args.ward, local_stream, local_stream_output, local_stream_control, num_from, num_to, verbose))
+        stream_local = threading.Thread(target = ls.local_stream_process, args = (ward, local_stream, local_stream_output, local_stream_control, num_from, num_to, verbose))
         stream_local.daemon = True
         stream_local.start()
     if(camera_ip is not None and preset_file is not None and preset_status_file is not None):
-        preset_report = threading.Thread(target = presets.report_preset, args = (5, args.ward, camera_ip, preset_file, preset_status_file, num_from, num_to, verbose))
+        preset_report = threading.Thread(target = presets.report_preset, args = (5, ward, camera_ip, preset_file, preset_status_file, num_from, num_to, verbose))
         preset_report.daemon = True
         preset_report.start()
 
@@ -444,7 +458,7 @@ if __name__ == '__main__':
             if(verbose): print(traceback.format_exc())
             print("Failure reading control file")
             if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, args.ward + " had a failure reading the control file!", verbose)
+                sms.send_sms(num_from, num_to, ward + " had a failure reading the control file!", verbose)
 
         if(stream == 1 and streaming == False):
           try:
@@ -460,9 +474,9 @@ if __name__ == '__main__':
             process = subprocess.Popen(split(broadcast_stream[broadcast_index]), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             process_terminate = False
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-            update_status.update("broadcast", start_time, stop_time, args.status_file, args.ward, num_from, num_to, verbose)
+            update_status.update("broadcast", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
             while process.poll() is None:
-                stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, num_from, num_to)
+                stop_time = check_extend(args.extend_file, stop_time, args.status_file, ward, num_from, num_to)
                 if(os.path.exists(args.control_file) or datetime.now() > stop_time or gf.killer.kill_now):
                     process_terminate = True
                     process.terminate()
@@ -486,7 +500,7 @@ if __name__ == '__main__':
                     if(verbose): print(traceback.format_exc())
                     print("Failure reading bandwidth file")
                     if(num_from is not None and num_to is not None):
-                        sms.send_sms(num_from, num_to, args.ward + " had a failure reading the bandwidth file!", verbose)
+                        sms.send_sms(num_from, num_to, ward + " had a failure reading the bandwidth file!", verbose)
                 # if we're already at the lowest bandwidth broadcast there's no reason to keep checking to see if we need to reduce bandwidth
                 if(broadcast_index < (len(broadcast_stream) - 1) and (datetime.now() - broadcast_status_check) > timedelta(minutes=1)):
                     # every minute grab the broadcast status so we can reduce the bandwidth if there's problems
@@ -495,7 +509,7 @@ if __name__ == '__main__':
                         print("Live ID doesn't match Current ID, updating status")
                         print(current_id + " => " + gf.current_id)
                         current_id = gf.current_id
-                    status, status_description = yt.get_broadcast_health(youtube, current_id, args.ward, num_from, num_to, verbose)
+                    status, status_description = yt.get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
                     broadcast_status_check = datetime.now()
                     if(verbose): print(status)
                     if(verbose): print(status_description)
@@ -503,14 +517,16 @@ if __name__ == '__main__':
                         broadcast_index += 1
                         # !!!! START DEBUG CODE !!!!
                         # if we're going to reduce the broadcast bandwidth, we want to collect some information so we can try to determine why the bandwidth needs to be reduced.
-                        url1 = 'htop1' + time.strftime("%Y%m%d-%H%M%S")  + '.html'
-                        url2 = 'htop2' + time.strftime("%Y%m%d-%H%M%S")  + '.html'
-                        htop = check_output("echo q | htop | aha --black --line-fix > html/" + url1, shell=True)
-                        htop = check_output("echo q | htop | aha --black --line-fix > html/" + url2, shell=True)
+                        url1 = 'top1' + time.strftime("%Y%m%d-%H%M%S")  + '.txt'
+                        url2 = 'top2' + time.strftime("%Y%m%d-%H%M%S")  + '.txt'
+                        url3 = 'ps' + time.strftime("%Y%m%d-%H%M%S")  + '.txt'
+                        top1 = check_output("top -b -n 1 -1 -c -H -w 512 > html/" + url1, shell=True)
+                        top1 = check_output("top -b -n 1 -1 -c -w 512 > html/" + url2, shell=True)
+                        ps = check_output("ps auxf > html/" + url3, shell=True)
                         temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1]
                         freq = check_output(['vcgencmd', 'measure_clock arm']).decode('utf-8').split('=')[-1]
                         throttled = check_output(['vcgencmd', 'get_throttled']).decode('utf-8').split('=')[-1]
-                        send_text = 'Ward: ' + args.ward + ' temperature is: ' + temp + ' and CPU freq.: ' + freq + ' with throttled: ' + throttled + '\n\n'
+                        send_text = 'Ward: ' + ward + ' temperature is: ' + temp + ' and CPU freq.: ' + freq + ' with throttled: ' + throttled + '\n\n'
                         try:
                             bandwidth = check_output(['speedtest']).decode('utf-8').splitlines(keepends=True)
                             for line in bandwidth:
@@ -521,6 +537,7 @@ if __name__ == '__main__':
 
                         send_text += '\n http://' + socket.gethostname() + '.hos-conf.local/' + url1
                         send_text += '\n http://' + socket.gethostname() + '.hos-conf.local/' + url2
+                        send_text += '\n http://' + socket.gethostname() + '.hos-conf.local/' + url3
 
                         if(num_from is not None and num_to is not None):
                             print(send_text)
@@ -537,10 +554,10 @@ if __name__ == '__main__':
                             if(verbose): print(traceback.format_exc())
                             print("Failure writing bandwidth file")
                             if(num_from is not None and num_to is not None):
-                                sms.send_sms(num_from, num_to, args.ward + " had a failure writing the bandwidth file!", verbose)
+                                sms.send_sms(num_from, num_to, ward + " had a failure writing the bandwidth file!", verbose)
                         broadcast_status_length = datetime.now()
                         if(num_from is not None and num_to is not None):
-                            sms.send_sms(num_from, num_to, args.ward + " reducing broadcast bandwidth to index " + str(broadcast_index) + "!", verbose)
+                            sms.send_sms(num_from, num_to, ward + " reducing broadcast bandwidth to index " + str(broadcast_index) + "!", verbose)
                         process_terminate = True
                         process.terminate()
                         process.wait()
@@ -554,14 +571,14 @@ if __name__ == '__main__':
                 if(not process_terminate and process.poll() is not None):
                     print("!!Main Stream Died!!")
                     if(num_from is not None and num_to is not None):
-                        sms.send_sms(num_from, num_to, args.ward + " main stream died!", verbose)
+                        sms.send_sms(num_from, num_to, ward + " main stream died!", verbose)
             streaming = False
           except:
             if(verbose): print(traceback.format_exc())
             streaming = False
             print("Live broadcast failure")
             if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, args.ward + " had a live broadcast failure!", verbose)
+                sms.send_sms(num_from, num_to, ward + " had a live broadcast failure!", verbose)
         elif(stream == 0 and streaming == False):
           try:
             print("pause stream")
@@ -575,9 +592,9 @@ if __name__ == '__main__':
             process = subprocess.Popen(split(ffmpeg_img), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             process_terminate = False
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-            update_status.update("pause", start_time, stop_time, args.status_file, args.ward, num_from, num_to, verbose)
+            update_status.update("pause", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
             while process.poll() is None:
-                stop_time = check_extend(args.extend_file, stop_time, args.status_file, args.ward, num_from, num_to)
+                stop_time = check_extend(args.extend_file, stop_time, args.status_file, ward, num_from, num_to)
                 if(not os.path.exists(args.control_file) or datetime.now() > stop_time or gf.killer.kill_now):
                     process_terminate = True
                     process.terminate()
@@ -595,7 +612,7 @@ if __name__ == '__main__':
             streaming = False
             print("Live broadcast failure pause")
             if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, args.ward + " had a live broadcast failure while paused!", verbose)
+                sms.send_sms(num_from, num_to, ward + " had a live broadcast failure while paused!", verbose)
 
         time.sleep(0.1)
 
@@ -605,7 +622,19 @@ if __name__ == '__main__':
         print(current_id + " => " + gf.current_id)
         current_id = gf.current_id
 
-    if(args.use_ptz):
+    # ffmpeg shoudl be closed down at this point if it hasn't then there's an issue
+    # it's possible this broadasts didn't close ffmpeg, or some other broadcast
+    # has started and is using it, either way send an alert
+    ps_aux = check_output(['ps', 'aux']).decode('utf-8')
+    if 'ffmpeg' in ps_aux:
+        # ffmpeg is still running, we don't want to handel this here, so just send a notification
+        print("ffmpeg still running while ending broadcast.")
+        if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward ffmpeg still running while ending broadcast!", verbose)
+
+    # if ffmpeg is still running we don't want to reset the camera to the off
+    # position, that will keep us from messing up an ongoing broadcast if this
+    # broadcast is the one we're killing because there are multiples running
+    if(args.use_ptz and ('ffmpeg' not in ps_aux)):
         subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as stopped
 
     print("Finished stream...")
@@ -614,10 +643,10 @@ if __name__ == '__main__':
     # the broadcast so we can continue using the same endpoint, this means
     # we'll need to manually stop the broadcast on youtube studio
     if(not gf.killer.kill_now):
-        yt.stop_broadcast(youtube, current_id, args.ward, num_from, num_to, verbose)
+        yt.stop_broadcast(youtube, current_id, ward, num_from, num_to, verbose)
 
     # change status back to start so webpage isn't left thinking we're still broadcasting/paused
-    update_status.update("start", start_time, stop_time, args.status_file, args.ward, num_from, num_to, verbose)
+    update_status.update("start", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     try:
@@ -627,7 +656,7 @@ if __name__ == '__main__':
         if(verbose): print(traceback.format_exc())
         print("Failed cleaning up control files")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, args.ward + " failed cleaning up control files!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed cleaning up control files!", verbose)
 
     if(not gf.killer.kill_now): # don't wait if we're trying to kill the process now
         # this time while we wait before deleting the video is to allow people
@@ -665,7 +694,7 @@ if __name__ == '__main__':
     if(not testing and send_email):
         print("e-mail concurrent viewer file")
         if(args.email_from is not None and args.email_to is not None):
-            send_email.send_viewer_file(args.ward.lower() + '_viewers.csv', args.email_from, args.email_to, args.ward, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+            send_email.send_viewer_file(ward.lower() + '_viewers.csv', args.email_from, args.email_to, ward, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
 
     print("Delete broadcast(s)")
     try:
@@ -675,7 +704,7 @@ if __name__ == '__main__':
 
         # delete all completed videos in Live list
         # delete all ready videos as they will cause problems for the new broadcast we will insert at the end of the script
-        broadcasts = yt.get_broadcasts(youtube, args.ward, num_from, num_to, verbose)
+        broadcasts = yt.get_broadcasts(youtube, ward, num_from, num_to, verbose)
         if(broadcasts is not None):
             for video_id, video_status in broadcasts.items():
                 if((delete_complete and video_status == "complete")
@@ -688,13 +717,13 @@ if __name__ == '__main__':
                             gf.log_exception(traceback.format_exc(), "failed to delete complete/ready broadcast(s)")
                             print("Failed to delete complete/ready broadcast(s)")
                             if(num_from is not None and num_to is not None):
-                                sms.send_sms(num_from, num_to, args.ward + " failed to delete complete/ready broadcast(s)!", verbose)
+                                sms.send_sms(num_from, num_to, ward + " failed to delete complete/ready broadcast(s)!", verbose)
     except:
         if(verbose): print(traceback.format_exc())
         gf.log_exception(traceback.format_exc(), "failed to delete broadcast")
         print("Failed to delete broadcast")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, args.ward + " failed to delete broadcast!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed to delete broadcast!", verbose)
 
     # create next weeks broadcast if recurring
     # don't create a new broadcast is forcibly killing process
@@ -714,17 +743,17 @@ if __name__ == '__main__':
                 if(verbose): print(traceback.format_exc())
                 print("Failed to get next broadcast date")
                 if(num_from is not None and num_to is not None):
-                    sms.send_sms(num_from, num_to, args.ward + " failed to get next broadcast date!", verbose)
+                    sms.send_sms(num_from, num_to, ward + " failed to get next broadcast date!", verbose)
         # create a broadcast endpoint for next weeks video
-        start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, next_date, args.ward, num_from, num_to, verbose)
-        current_id = insert_event.insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, args.ward, num_from, num_to, verbose)
+        start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, next_date, ward, num_from, num_to, verbose)
+        current_id = insert_event.insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, ward, num_from, num_to, verbose)
 
          # update status file with next start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-        update_status.update("start", start_time, stop_time, args.status_file, args.ward, num_from, num_to, verbose)
+        update_status.update("start", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
 
         if(current_id is None):
             print("Failed to create new broadcast for next week")
-            if(num_from is not None and num_to is not None): sms.send_sms(num_from, num_to, args.ward + " failed to create broadcast for next week!", verbose)
+            if(num_from is not None and num_to is not None): sms.send_sms(num_from, num_to, ward + " failed to create broadcast for next week!", verbose)
 
         # make sure link on web host is current
         update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
@@ -739,7 +768,7 @@ if __name__ == '__main__':
         if(verbose): print(traceback.format_exc())
         print("Failed cleaning up control files")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, args.ward + " failed cleaning up control files!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed cleaning up control files!", verbose)
     # set broadcast back to standard (write 0 to broadcast file) so next broadcast starts in high-bandwidth mode
     try:
         if(bandwidth_file is not None):
@@ -749,7 +778,7 @@ if __name__ == '__main__':
         if(verbose): print(traceback.format_exc())
         print("Failure clearing bandwidth file")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, args.ward + " had a failure clearing the bandwidth file!", verbose)
+            sms.send_sms(num_from, num_to, ward + " had a failure clearing the bandwidth file!", verbose)
 
     # leave terminal in a working state on exit but only if running from command line
     if sys.stdin and sys.stdin.isatty():
