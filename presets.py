@@ -62,6 +62,7 @@ def set_preset(ward, cam_ip, preset_file, preset, num_from = None, num_to = None
             except:
                 if(verbose): print(traceback.format_exc())
                 print("Failure setting camera PTZ position")
+
                 if(num_from is not None and num_to is not None):
                     sms.send_sms(num_from, num_to, ward + " had a failure setting camera PTZ position in set method!", verbose)
 
@@ -249,8 +250,13 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
                 gf.consecutive_ptz_status_failures = 0
                 if(gf.ptz_sms_sent <= gf.ptz_sms_max):
                     gf.ptz_sms_sent += 1
-                    if(num_from is not None and num_to is not None):
-                        sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
+                    # Have yet to see this failure notification be anything more
+                    # than just camera unresponsiveness or network packets
+                    # getting dropped, all this SMS notification does is fill 
+                    # up the notification system and make it harder to see 
+                    # real problems
+                    #if(num_from is not None and num_to is not None):
+                    #    sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
             time.sleep(1)
 
     ptz_cam.close_connection()

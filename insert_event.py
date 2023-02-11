@@ -13,8 +13,8 @@ import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
 import update_status # update_status.py localfile
 
-def insert_event(youtube, title, description, start_time, run_time, thumbnail, ward, num_from = None, num_to = None, verbose = False):
-    current_id = yt.create_live_event(youtube, title, description, start_time, run_time, thumbnail, ward, num_from, num_to, verbose)
+def insert_event(youtube, title, description, start_time, run_time, thumbnail, ward, num_from = None, num_to = None, verbose = False, language = None, captions = False):
+    current_id = yt.create_live_event(youtube, title, description, start_time, run_time, thumbnail, ward, num_from, num_to, verbose, language, captions)
 
     return(current_id)
 
@@ -96,7 +96,8 @@ if __name__ == '__main__':
 
     credentials_file = args.ward.lower() + '.auth'
 
-    if(broadcast_day is None):
+    # if sending in a start date argument, it should override json file
+    if(args.start_date is not None):
         broadcast_date = args.start_date
     else:
         import calendar

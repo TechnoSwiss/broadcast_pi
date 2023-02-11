@@ -19,7 +19,7 @@ import global_file as gf # local file for sharing globals between files
 NUM_RETRIES = 5
 
 # YouTube no longer has a default broadcast, so the only ways to have a new broadcast created are to use the GoLive button in YouTube Studio, or to use the API and create a new live event. AutoStart is selected so the broadcast goes live as soon as you start streaming data to it. AutoStop is turned off so that if something causs a hiccup in the stream, YouTube won't close out the video before you're ready (had that happen on a few occasions) Because this stream is going out to families, including children I've set this to mark the videos as made for children. This causes many things to be tuned off (like monatization, personalized ads, comments and live chat) but I don't think any of those effect what we're trying to accomplish here.
-def create_live_event(youtube, title, description, starttime, duration, thumbnail, ward, num_from = None, num_to = None, verbose = False):
+def create_live_event(youtube, title, description, starttime, duration, thumbnail, ward, num_from = None, num_to = None, verbose = False, language = None, captions = False):
     starttime = starttime.replace(tzinfo=tz.tzlocal())
     starttime = starttime.astimezone(tz.tzutc())
     duration = dt.datetime.strptime(duration,'%H:%M:%S')
@@ -29,7 +29,8 @@ def create_live_event(youtube, title, description, starttime, duration, thumbnai
             part="snippet,contentDetails,status",
             body={
               "contentDetails": {
-                "enableClosedCaptions": False,
+                "enableClosedCaptions": captions,
+                "closedCaptionsType": "closedCaptionsDisabled",
                 "enableContentEncryption": True,
                 "enableDvr": True,
                 "enableAutoStart": True,
@@ -116,7 +117,7 @@ def get_next_broadcast(youtube, ward, num_from = None, num_to = None, verbose = 
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed to get next broadcast!", verbose)
             return(None)
-        
+
         if(len(list_broadcasts['items']) > 0 and 'nextPageToken' in list_broadcasts.keys()):
             nextPage = list_broadcasts['nextPageToken']
         else:
@@ -152,7 +153,7 @@ def get_live_broadcast(youtube, ward, num_from = None, num_to = None, verbose = 
                 live_count += 1
 
     if(live_count > 1):
-        print("More than one live  broadcasts")
+        print("More than one live broadcasts")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " more than one live broadcasts!", verbose)
         return(None)
@@ -392,9 +393,9 @@ if __name__ == '__main__':
 
     #print(create_stream(youtube, args.ward))
 
-    #create_live_event(youtube, args.title, starttime, args.run_time, args.thumbnail, args.ward)
+    #create_live_event(youtube, args.title, starttime, args.run_time, args.thumbnail, args.ward, None, None, True, None, True)
     print(get_next_broadcast(youtube, args.ward))
-    print(get_broadcasts(youtube, args.video_id, args.ward))
+    #print(get_broadcasts(youtube, args.video_id, args.ward))
     #print(get_live_broadcast(youtube, args.ward))
     #print(get_stream(youtube, args.ward))
     #bind_broadcast(youtube, args.video_id, "VY-K6BTl3Wjxg61zO9-s0A1599607954801518", args.ward)

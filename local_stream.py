@@ -2,6 +2,7 @@
 
 import argparse
 import signal
+import sys
 import os
 import traceback
 import subprocess
@@ -34,12 +35,12 @@ def local_stream_process(ward, local_stream, local_stream_output, local_stream_c
     local_stream_process = "ffmpeg -thread_queue_size 2048 -c:v h264 -rtsp_transport tcp -i rtsp://" + local_stream + " -vf fps=fps=3 -update 1 " + local_stream_output + " -y"
     while(not gf.killer.kill_now):
         try:
-            if(os.path.exists(local_stream_control)):
+            if(os.path.exists(local_stream_control) and not gf.stream_event.is_set()):
                 print("Starting Local Stream")
                 process = subprocess.Popen(split(local_stream_process), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 process_terminate = False
                 while process.poll() is None:
-                    if(not os.path.exists(local_stream_control)):
+                    if(not os.path.exists(local_stream_control) or gf.stream_event.is_set()):
                         print("Stopping Local Stream")
                         process_terminate = True
                         process.terminate()
@@ -47,7 +48,7 @@ def local_stream_process(ward, local_stream, local_stream_output, local_stream_c
                         break;
                     time.sleep(1)
                     # if something is using the camera after the sleep we'll 
-                    # end up wiht process.poll() != None and we'll get stuck
+                    # end up with process.poll() != None and we'll get stuck
                     # in an endless loop here
                     if(not process_terminate and process.poll() is not None):
                         print("!!Local Stream Died!!")
@@ -57,6 +58,10 @@ def local_stream_process(ward, local_stream, local_stream_output, local_stream_c
             print("Local Stream Failure")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " had a local stream failure!", verbose)
+
+    # leave terminal in a working state on exit but only if running from command line
+    if sys.stdin and sys.stdin.isatty():
+        os.system('stty sane')
     print("Local Stream Finished")
 
 if __name__ == '__main__':

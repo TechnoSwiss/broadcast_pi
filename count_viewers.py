@@ -15,25 +15,36 @@ import sms # sms.py local file
 import send_email # send_email.py localfile
 import global_file as gf # local file for sharing globals between files
 
-def count_viewers(filename, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False):
+def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, statusFile = None):
+    while True:
+      # check video id in global file to see if we need to update the video id that we're monitoring
+      if(gf.current_id and gf.current_id != videoID):
+          print("Live ID doesn't match Current ID, updating count")
+          print(videoID + " => " + gf.current_id)
+          videoID = gf.current_id
+      if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to, verbose) == "complete"):
+          break
+      if extended:
+          temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1].rstrip()
+          throttled = check_output(['vcgencmd', 'get_throttled']).decode('utf-8').split('=')[-1].rstrip()
+          status, description = yt.get_broadcast_health(youtube, videoID, ward, num_from, num_to, verbose)
+      numViewers = str(yt.get_concurrent_viewers(youtube, videoID, ward, num_from, num_to, verbose))
+      outputData = datetime.now().strftime("%m/%d/%Y %H:%M:%S,") + numViewers + ('\n' if not extended else ("," + temp + "," + throttled + "," + status + "," + description + '\n'))
+      outFile.write(outputData)
+      outFile.flush()
+      if(statusFile is not None):
+          statusFile.write(numViewers + '\n')
+          statusFile.flush()
+      time.sleep(30)
+
+def count_viewers(filename, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, status = None):
     try:
         with open(filename, 'w') as outFile:
-            while True:
-                # check video id in global file to see if we need to update the video id that we're monitoring
-                if(gf.current_id and gf.current_id != videoID):
-                    print("Live ID doesn't match Current ID, updating count")
-                    print(videoID + " => " + gf.current_id)
-                    videoID = gf.current_id
-                if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to, verbose) == "complete"):
-                    break
-                if extended:
-                    temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1].rstrip()
-                    throttled = check_output(['vcgencmd', 'get_throttled']).decode('utf-8').split('=')[-1].rstrip()
-                    status, description = yt.get_broadcast_health(youtube, videoID, ward, num_from, num_to, verbose)
-                outputData = datetime.now().strftime("%m/%d/%Y %H:%M:%S,") + str(yt.get_concurrent_viewers(youtube, videoID, ward, num_from, num_to, verbose)) + ('\n' if not extended else ("," + temp + "," + throttled + "," + status + "," + description + '\n'))
-                outFile.write(outputData)
-                outFile.flush()
-                time.sleep(30)
+            if(status is not None):
+                with open(status, 'w') as statusFile:
+                    write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, statusFile)
+            else:
+                write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended)
     except:
         if(verbose): print(traceback.format_exc())
         print("Error attempting to write viewers file")

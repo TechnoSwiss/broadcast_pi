@@ -177,6 +177,8 @@ if __name__ == '__main__':
     email_url_addresses = [] # email addresses to sent randomized URL to
     description = None
     bandwidth_file = None
+    broadcast_watching_file = None
+    broadcast_reset_file = None
     local_stream = None
     local_stream_output = None
     local_stream_control = None
@@ -267,6 +269,10 @@ if __name__ == '__main__':
                 args.control_file = config['broadcast_pause_control']
             if 'broadcast_bandwidth_control' in config:
                 bandwidth_file = config['broadcast_bandwidth_control']
+            if 'broadcast_watching_status' in config:
+                broadcast_watching_file = config['broadcast_watching_status']
+            if 'broadcast_reset_status' in config:
+                broadcast_reset_file = config['broadcast_reset_status']
             if 'local_stream_control' in config:
                 local_stream_control = config['local_stream_control']
             if 'preset_status_file' in config:
@@ -300,13 +306,13 @@ if __name__ == '__main__':
 
     if(args.audio_gain is not None and args.audio_gate is not None):
         print("!!Audio Gain and Audio Gate are mutually exclusive!!")
-        exit()
+        sys.exit("Audio Fain and Audio Gate are mutually exclusive")
     if(ward is None):
         print("!!Ward is required argument!!")
-        exit()
+        sys.exit("Ward is required argument")
     if(args.youtube_key is None):
         print("!!YouTube Key is a required argument!!")
-        exit()
+        sys.exit("YouTube Key is a required argument")
 
     if(testing):
         print("!!testing is active!!")
@@ -343,7 +349,7 @@ if __name__ == '__main__':
     if not os.path.exists(args.pause_image):
         if(num_from is not None): sms.send_sms(num_from, num_to, ward + " no pause image available!", verbose)
         print("Pause image not found, image is required for paused stream.")
-        exit()
+        sys.exit("Pause image not found and is require for paused stream")
 
     credentials_file = ward.lower() + '.auth'
     
@@ -374,11 +380,14 @@ if __name__ == '__main__':
         os.remove(args.extend_file)
 
     # check if ffmpeg is already running, which would signal that previous broadcast didn't end correctly, and bad things will happen
-    ps_aux = check_output(['ps', 'aux']).decode('utf-8')
-    if 'ffmpeg' in ps_aux:
-        # ffmpeg is still running, we don't want to handel this here, so just send a notification
-        print("ffmpeg still running from previous broadcast.")
-        if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward ffmpeg still running from previous broadcast!", verbose)
+    for line in os.popen("ps aux | grep ffmpeg | grep -v grep"):
+        fields = line.split()
+        pid = fields[1]
+
+        os.kill(int(pid), signal.SIGKILL)
+
+        print("ffmpeg still running from previous broadcast with pid : " + pid + " killing process")
+        if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward ffmpeg still running from previous broadcast with pid : " + pid + "! Killing process.", verbose)
  
     #authenticate with YouTube API
     exception = None
@@ -395,7 +404,7 @@ if __name__ == '__main__':
         print("YouTube authentication failure.")
         if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward YouTube authentication failure!", verbose)
         # we can't continue if not authenticated to YouTube so exit out
-        exit()
+        sys.exit("Can't authenticate to YouTube")
   
     #get next closest broadcast endpoint from youtube (should only be one)
     current_id = yt.get_next_broadcast(youtube, ward, num_from, num_to, verbose)
@@ -405,7 +414,7 @@ if __name__ == '__main__':
         if(current_id is None):
             print("Failed to get current broadcast, and broadcast creation also failed!")
             if(num_from is not None): sms.send_sms(num_from, num_to, ward + " Ward failed to get current broadcast, and broadcast creation also failed!", verbose)
-            exit()
+            sys.exit("No current broadcast, and new broadcast creation failed")
     
     # if we have a broadcast status of created (which is what we should be getting here each time) then we need to bind the broadcast before we can use it
     if(yt.get_broadcast_status(youtube, current_id, ward, num_from, num_to, verbose == 'created')):
@@ -432,7 +441,7 @@ if __name__ == '__main__':
 
     process = None
     streaming = False
-    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (ward.lower() + '_viewers.csv', youtube, current_id, ward, num_from, num_to, verbose, args.extended))
+    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (ward.lower() + '_viewers.csv', youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file))
     count_viewers.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
     count_viewers.start()
     print("Starting stream...")
@@ -450,6 +459,19 @@ if __name__ == '__main__':
 
     broadcast_start = datetime.now()
     stream_last = 0
+
+    #if reset file exists clean it up here, we want to wait till we get this far so hopefully we've bypassed the issue that's causing the reset to be attempted
+    try:
+        if(broadcast_reset_file is not None and os.path.exists(broadcast_reset_file)):
+            os.remove(broadcast_reset_file)
+            print("Removed reset file")
+            if(num_from is not None and num_to is not None):
+                sms.send_sms(num_from, num_to, ward + " removed reset file.", verbose)
+    except:
+        if(verbose): print(traceback.format_exc())
+        print("Failed cleaning up reset file")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed cleaning up reset file!", verbose)
 
     while(datetime.now() < stop_time and not gf.killer.kill_now):
         try:
@@ -616,25 +638,31 @@ if __name__ == '__main__':
 
         time.sleep(0.1)
 
-    # if gf.current_id has been defined, then verify_life_broadcast detected a change in the video id we're using, so we need to update for that
+    #moved these to before the ffmpeg test to give local stream time to shutdown
+    #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
+    try:
+        if(args.control_file is not None and os.path.exists(args.control_file)):
+            os.remove(args.control_file)
+        if(local_stream_control is not None and os.path.exists(local_stream_control)):
+            os.remove(local_stream_control)
+    except:
+        if(verbose): print(traceback.format_exc())
+        print("Failed cleaning up control files")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed cleaning up control files!", verbose)
+
+    # if gf.current_id has been defined, then verify_live_broadcast detected a change in the video id we're using, so we need to update for that
     if(gf.current_id and gf.current_id != current_id):
         print("Live ID doesn't match Current ID, updating cleanup")
         print(current_id + " => " + gf.current_id)
         current_id = gf.current_id
 
-    # ffmpeg shoudl be closed down at this point if it hasn't then there's an issue
-    # it's possible this broadasts didn't close ffmpeg, or some other broadcast
-    # has started and is using it, either way send an alert
-    ps_aux = check_output(['ps', 'aux']).decode('utf-8')
-    if 'ffmpeg' in ps_aux:
-        # ffmpeg is still running, we don't want to handel this here, so just send a notification
-        print("ffmpeg still running while ending broadcast.")
-        if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward ffmpeg still running while ending broadcast!", verbose)
-
-    # if ffmpeg is still running we don't want to reset the camera to the off
-    # position, that will keep us from messing up an ongoing broadcast if this
-    # broadcast is the one we're killing because there are multiples running
-    if(args.use_ptz and ('ffmpeg' not in ps_aux)):
+    # if we forced killed this broadcast there's a good chance we don't want
+    # to move the camera to the off position  that will keep us from messing
+    # up an ongoing broadcast if this broadcast is the one we're killing 
+    # because there are multiples running only worry about this if it's
+    # a force kill, not normal finished time
+    if(args.use_ptz and not gf.killer.kill_now):
         subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as stopped
 
     print("Finished stream...")
@@ -648,16 +676,6 @@ if __name__ == '__main__':
     # change status back to start so webpage isn't left thinking we're still broadcasting/paused
     update_status.update("start", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
 
-    #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
-    try:
-        if(args.control_file is not None and os.path.exists(args.control_file)):
-            os.remove(args.control_file)
-    except:
-        if(verbose): print(traceback.format_exc())
-        print("Failed cleaning up control files")
-        if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed cleaning up control files!", verbose)
-
     if(not gf.killer.kill_now): # don't wait if we're trying to kill the process now
         # this time while we wait before deleting the video is to allow people
         # time to finish watching the stream if they started late because of this
@@ -670,6 +688,11 @@ if __name__ == '__main__':
     else:
         # keep hitting a crash here with the viewers script, adding a delay for this case to prevent possble race condition
         time.sleep(5)
+
+    # stop the local_stream thread if it's running
+    # move this to later in the script so camera as time to face the back wall
+    # so the last image sent to the web page isn't the stand
+    gf.stream_event.set()
 
     # read config file so we can pull in changes for testing and delete
     # that may have happened while script was running
@@ -696,11 +719,12 @@ if __name__ == '__main__':
         if(args.email_from is not None and args.email_to is not None):
             send_email.send_viewer_file(ward.lower() + '_viewers.csv', args.email_from, args.email_to, ward, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
 
-    print("Delete broadcast(s)")
     try:
         # delete the recording we just finished
         # if forcibly killing process, don't delete video
-        if(delete_current and not gf.killer.kill_now): youtube.videos().delete(id=current_id).execute()
+        if(delete_current and not gf.killer.kill_now):
+            youtube.videos().delete(id=current_id).execute()
+            print("Delete current broadcast")
 
         # delete all completed videos in Live list
         # delete all ready videos as they will cause problems for the new broadcast we will insert at the end of the script
@@ -709,6 +733,7 @@ if __name__ == '__main__':
             for video_id, video_status in broadcasts.items():
                 if((delete_complete and video_status == "complete")
                     or (delete_ready and (video_status == "ready"))): # if the broadcast got created but not bound it will be in created instead of ready state, since an un-bound broadcast can't unexpectedly accept a stream we'll leave these 
+                    print("Delete complete/ready broadcast(s)")
                     if(video_id != current_id): # if current_id is still in list, then we've skipped deleting it above, so don't delete now.
                         try:
                             youtube.videos().delete(id=video_id).execute()
@@ -779,6 +804,13 @@ if __name__ == '__main__':
         print("Failure clearing bandwidth file")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " had a failure clearing the bandwidth file!", verbose)
+
+    # check if ffmpeg is still running, which would signal that broadcast didn't end correctly, and bad things will happen
+    ps_aux = check_output(['ps', 'aux']).decode('utf-8')
+    if 'ffmpeg' in ps_aux:
+        # ffmpeg is still running, we don't want to handle this here, so just send a notification
+        print("ffmpeg still running from current broadcast.")
+        if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward ffmpeg still running from current broadcast!", verbose)
 
     # leave terminal in a working state on exit but only if running from command line
     if sys.stdin and sys.stdin.isatty():
