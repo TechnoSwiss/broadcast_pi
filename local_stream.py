@@ -35,12 +35,14 @@ def local_stream_process(ward, local_stream, local_stream_output, local_stream_c
     local_stream_process = "ffmpeg -thread_queue_size 2048 -c:v h264 -rtsp_transport tcp -i rtsp://" + local_stream + " -vf fps=fps=3 -update 1 " + local_stream_output + " -y"
     while(not gf.killer.kill_now):
         try:
-            if(os.path.exists(local_stream_control) and not gf.stream_event.is_set()):
+            if(os.path.exists(local_stream_control) and not gf.stream_event_terminate.is_set()):
                 print("Starting Local Stream")
                 process = subprocess.Popen(split(local_stream_process), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 process_terminate = False
                 while process.poll() is None:
-                    if(not os.path.exists(local_stream_control) or gf.stream_event.is_set()):
+                    if(not os.path.exists(local_stream_control) or gf.stream_event_terminate.is_set()):
+                        if(gf.stream_event_terminate.is_set()):
+                            print("Received stream termination signal")
                         print("Stopping Local Stream")
                         process_terminate = True
                         process.terminate()

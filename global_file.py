@@ -14,6 +14,7 @@ ptz_sms_max = 5
 save_exceptions_to_file = True
 global_lock = threading.Lock()
 stream_event = threading.Event()
+stream_event_terminate = threading.Event()
 
 current_id = None
 

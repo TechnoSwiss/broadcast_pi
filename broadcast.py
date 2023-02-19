@@ -39,6 +39,7 @@ import local_stream as ls # local_stream.py local file
 import global_file as gf # local file for sharing globals between files
 
 NUM_RETRIES = 5
+EXTEND_TIME_INCREMENT = 5
 
 class GracefulKiller:
   kill_now = False
@@ -66,11 +67,15 @@ def signal_sigfault(sig, frame):
 def check_extend(extend_file, stop_time, status_file, ward, num_from = None, num_to = None):
     global extend_time
     if os.path.exists(extend_file):
-        extend_time += 5
+        extend_time += EXTEND_TIME_INCREMENT
         os.remove(extend_file)
         if(args.extend_max is None or extend_time <= args.extend_max):
-            stop_time = stop_time + timedelta(minutes=5)
+            stop_time = stop_time + timedelta(minutes=EXTEND_TIME_INCREMENT)
             update_status.update("stop", None, stop_time, status_file, ward, num_from, num_to, verbose)
+            print("extending broadcast time by " + str(EXTEND_TIME_INCREMENT) + " min.")
+            print("stop_time extended to: " + stop_time.strftime("%d-%b-%Y %H:%M:%S"))
+        else:
+            print("broadcast time can't be extended")
     return(stop_time)
 
 def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_filename, num_from = None, num_to = None, verbose = False):
@@ -665,6 +670,13 @@ if __name__ == '__main__':
     if(args.use_ptz and not gf.killer.kill_now):
         subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as stopped
 
+    # stop the local_stream thread if it's running
+    # move this to later in the script so camera as time to face the back wall
+    # so the last image sent to the web page isn't the stand
+    # we'll set the strem_event here after moving the camera to off, and then
+    # set the terminate event after the camera has reached the off position
+    gf.stream_event.set()
+
     print("Finished stream...")
     # if we're forcibly killing the stream we're doing something manually
     # leave the stream endpoint running on youtube in case we need to re-start
@@ -680,7 +692,7 @@ if __name__ == '__main__':
         # this time while we wait before deleting the video is to allow people
         # time to finish watching the stream if they started late because of this
         # we want to continue getting viewer updates, so don't email until time runs out
-        print("video will be deleted at {}".format((datetime.now() + timedelta(minutes=int(args.delay_after))).strftime("%d-%b-%Y %H:%M:%S")))
+        print("video(s) deletion routine will run at {}".format((datetime.now() + timedelta(minutes=int(args.delay_after))).strftime("%d-%b-%Y %H:%M:%S")))
         # wait for X min before deleting video
         delete_time = datetime.now() + timedelta(minutes=args.delay_after)
         while(datetime.now() < delete_time and not gf.killer.kill_now):
@@ -689,10 +701,9 @@ if __name__ == '__main__':
         # keep hitting a crash here with the viewers script, adding a delay for this case to prevent possble race condition
         time.sleep(5)
 
-    # stop the local_stream thread if it's running
-    # move this to later in the script so camera as time to face the back wall
-    # so the last image sent to the web page isn't the stand
-    gf.stream_event.set()
+    # in the event that the camera didn't read the off position terminate the 
+    # local stream now
+    gf.stream_event_terminate.set()
 
     # read config file so we can pull in changes for testing and delete
     # that may have happened while script was running
@@ -732,23 +743,26 @@ if __name__ == '__main__':
         if(broadcasts is not None):
             for video_id, video_status in broadcasts.items():
                 if((delete_complete and video_status == "complete")
-                    or (delete_ready and (video_status == "ready"))): # if the broadcast got created but not bound it will be in created instead of ready state, since an un-bound broadcast can't unexpectedly accept a stream we'll leave these 
-                    print("Delete complete/ready broadcast(s)")
+                    or (delete_ready and (video_status == "ready"))): # if the broadcast got created but not bound it will be in created instead of ready state, since an un-bound broadcast can't unexpectedly accept a stream we'll leave these
                     if(video_id != current_id): # if current_id is still in list, then we've skipped deleting it above, so don't delete now.
                         try:
+                            if(video_status == "complete"):
+                                print("Delete complete broadcast " + video_id)
+                            if(video_status == "ready"):
+                                print("Delete ready broadcast " + video_id)
                             youtube.videos().delete(id=video_id).execute()
                         except:
                             if(verbose): print(traceback.format_exc())
                             gf.log_exception(traceback.format_exc(), "failed to delete complete/ready broadcast(s)")
-                            print("Failed to delete complete/ready broadcast(s)")
+                            print("Failed to delete complete/ready broadcast " + video_id)
                             if(num_from is not None and num_to is not None):
-                                sms.send_sms(num_from, num_to, ward + " failed to delete complete/ready broadcast(s)!", verbose)
+                                sms.send_sms(num_from, num_to, ward + " failed to delete complete/ready broadcast " + video_id + "!", verbose)
     except:
         if(verbose): print(traceback.format_exc())
         gf.log_exception(traceback.format_exc(), "failed to delete broadcast")
-        print("Failed to delete broadcast")
+        print("Failed to delete broadcast " + video_id)
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to delete broadcast!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed to delete broadcast " + video_id + "!", verbose)
 
     # create next weeks broadcast if recurring
     # don't create a new broadcast is forcibly killing process

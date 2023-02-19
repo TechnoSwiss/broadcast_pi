@@ -41,7 +41,7 @@ def set_preset(ward, cam_ip, preset_file, preset, num_from = None, num_to = None
         if(verbose): print(traceback.format_exc())
         print("Error reading preset file")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " had an error reading the preset filei in set method!", verbose)
+            sms.send_sms(num_from, num_to, ward + " had an error reading the preset file in set method!", verbose)
         return
 
     try:
@@ -233,6 +233,11 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
             last_zoom = zoom
 
             gf.consecutive_ptz_status_failures = 0
+
+            # camera has stopped moving, so if we're attempting to terminate
+            # the local stream, send that signal now.
+            if(gf.stream_event.is_set()):
+                gf.stream_event_terminate.set()
 
             time.sleep(1)
         except:
