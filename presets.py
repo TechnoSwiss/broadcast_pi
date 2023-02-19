@@ -222,6 +222,10 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
                 if(preset != last_preset and preset is None):
                     print("Undefined")
                     preset = -1
+                # camera has stopped moving, so if we're attempting to terminate
+                # the local stream, send that signal now.
+                if(gf.stream_event.is_set()):
+                    gf.stream_event_terminate.set()
 
             if(preset_status_file is not None):
                 with open(preset_status_file, "w") as presetstatusFile:
@@ -233,11 +237,6 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
             last_zoom = zoom
 
             gf.consecutive_ptz_status_failures = 0
-
-            # camera has stopped moving, so if we're attempting to terminate
-            # the local stream, send that signal now.
-            if(gf.stream_event.is_set()):
-                gf.stream_event_terminate.set()
 
             time.sleep(1)
         except:
