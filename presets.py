@@ -213,6 +213,15 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
                             presetstatusFile.write('0\n')
 
             else:
+                # we only want to check for this after the camera has finished
+                # moving, so check for preset = 0 to determine the last pass
+                # through this was the camera moving
+                if(preset == 0):
+                    # camera has stopped moving, so if we're attempting to
+                    # terminate the local stream, send that signal now.
+                    if(gf.stream_event.is_set()):
+                        gf.stream_event_terminate.set()
+
                 preset = None
                 for preset_name in presets:
                     if(pan == presets[preset_name]['pan'] and tilt == presets[preset_name]['tilt'] and zoom == presets[preset_name]['zoom']):
@@ -222,10 +231,6 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
                 if(preset != last_preset and preset is None):
                     print("Undefined")
                     preset = -1
-                # camera has stopped moving, so if we're attempting to terminate
-                # the local stream, send that signal now.
-                if(gf.stream_event.is_set()):
-                    gf.stream_event_terminate.set()
 
             if(preset_status_file is not None):
                 with open(preset_status_file, "w") as presetstatusFile:

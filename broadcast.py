@@ -740,7 +740,7 @@ if __name__ == '__main__':
         # delete all completed videos in Live list
         # delete all ready videos as they will cause problems for the new broadcast we will insert at the end of the script
         broadcasts = yt.get_broadcasts(youtube, ward, num_from, num_to, verbose)
-        if(broadcasts is not None):
+        if(broadcasts is not None and not gf.killer.kill_now):
             for video_id, video_status in broadcasts.items():
                 if((delete_complete and video_status == "complete")
                     or (delete_ready and (video_status == "ready"))): # if the broadcast got created but not bound it will be in created instead of ready state, since an un-bound broadcast can't unexpectedly accept a stream we'll leave these
