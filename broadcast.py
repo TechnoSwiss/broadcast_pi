@@ -40,6 +40,8 @@ import global_file as gf # local file for sharing globals between files
 
 NUM_RETRIES = 5
 EXTEND_TIME_INCREMENT = 5
+MAX_PROCESS_POLL_FAILURE = 3
+PROCESS_POLL_CLEAR_AFTER = 5
 
 class GracefulKiller:
   kill_now = False
@@ -440,6 +442,8 @@ if __name__ == '__main__':
     broadcast_downgrade_delay = [2, 4, 4] # how long to we wait before step from one broadcast stream to the next?
     broadcast_status_length = datetime.now()
     broadcast_status_check = datetime.now()
+    process_poll_failure = 0
+    process_poll_clear = 0
 
     for ffmpeg_command in broadcast_stream:
         if(verbose): print("\nffmpeg command : " + ffmpeg_command + "\n")
@@ -596,10 +600,27 @@ if __name__ == '__main__':
                 # end up with process.poll() != None and we'll get stuck
                 # in an endless loop here
                 if(not process_terminate and process.poll() is not None):
-                    print("!!Main Stream Died!!")
+                    process_poll_failure += 1
+                    process_poll_clear = 0
+                    if(process_poll_failure > MAX_PROCESS_POLL_FAILURE):
+                        print("!!Main Stream Died, max failure reached, exiting!! (check camera)")
+                        if(num_from is not None and num_to is not None):
+                            sms.send_sms(num_from, num_to, ward + " main stream died, max failure reached, exiting! (check camera)", verbose)
+                        sys.exit("Main Stream max failure reached")
+
+                    print("!!Main Stream Died!! (" + str(process_poll_failure) + ")")
                     if(num_from is not None and num_to is not None):
-                        sms.send_sms(num_from, num_to, ward + " main stream died!", verbose)
+                        sms.send_sms(num_from, num_to, ward + " main stream died! (" + str(process_poll_failure) + ")", verbose)
+                else:
+                    process_poll_clear += 1
+                    if(process_poll_clear > PROCESS_POLL_CLEAR_AFTER):
+                        if(verbose): print("clear process failure")
+                        process_poll_failure = 0
+
             streaming = False
+          except SystemExit as e:
+              #if we threw a system exit something is wrong bail out
+              sys.exit("Caught system exit")
           except:
             if(verbose): print(traceback.format_exc())
             streaming = False
@@ -629,11 +650,29 @@ if __name__ == '__main__':
                     break;
                 time.sleep(1)
                 # if something is using the camera after the sleep we'll
-                # end up wiht process.poll() != None and we'll get stuck
+                # end up with process.poll() != None and we'll get stuck
                 # in an endless loop here
                 if(not process_terminate and process.poll() is not None):
-                    print("!!Pause Stream Died!!")
+                    process_poll_failure += 1
+                    process_poll_clear = 0
+                    if(process_poll_failure > MAX_PROCESS_POLL_FAILURE):
+                        print("!!Pause Stream Died, max failure reached, exiting!!")
+                        if(num_from is not None and num_to is not None):
+                            sms.send_sms(num_from, num_to, ward + " main stream died, max failure reached, exiting!", verbose)
+                        sys.exit("Pause Stream max failure reached")
+
+                    print("!!Pause Stream Died!! (" + str(process_poll_failure) + ")")
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, ward + " pause stream died! (" + str(process_poll_failure) + ")", verbose)
+                else:
+                    if(process_poll_clear > PROCESS_POLL_CLEAR_AFTER):
+                        if(verbose): print("clear process failure")
+                        process_poll_failure = 0
+
             streaming = False
+          except SystemExit as e:
+              #if we threw a system exit something is wrong bail out
+              sys.exit("Caught system exit")
           except:
             if(verbose): print(traceback.format_exc())
             streaming = False
@@ -683,6 +722,7 @@ if __name__ == '__main__':
     # the broadcast so we can continue using the same endpoint, this means
     # we'll need to manually stop the broadcast on youtube studio
     if(not gf.killer.kill_now):
+        print("Stopping YT broadcast...")
         yt.stop_broadcast(youtube, current_id, ward, num_from, num_to, verbose)
 
     # change status back to start so webpage isn't left thinking we're still broadcasting/paused
