@@ -87,7 +87,7 @@ def send_viewer_file(csv_file, email_from, email_to, ward, dkim_private_key = No
         if(verbose): print(traceback.format_exc())
         print("Failed to send CSV file email")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to write current viewers!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed to send current viewers!", verbose)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Email CSV file')
