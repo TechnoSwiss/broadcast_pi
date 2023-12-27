@@ -58,13 +58,14 @@ def signal_handler(sig, frame):
   print('\n!!Exiting from Ctrl+C or SIGTERM!!')
   sys.exit(0)
 
-# sigfault happening and need to at least be alerted when application fails because of this so we can restart it
-def signal_sigfault(sig, frame):
+# sigfault happening and seemed to be re-segfaulting trying to send SMS alert
+# exit with a non-zero code and handle notification / restart outside script
+def signal_segfault(sig, frame):
     print("!!SEGFAULT!!")
     faulthandler.dump_traceback(file=sys.stdout, all_threads=True)
-    if(num_from is not None and num_to is not None):
-        sms.send_sms(num_from, num_to, ward + " SEGFAULT occured!", verbose)
-    sys.exit(0)
+#    if(num_from is not None and num_to is not None):
+#        sms.send_sms(num_from, num_to, ward + " SEGFAULT occured!", verbose)
+    sys.exit(1)
 
 def check_extend(extend_file, stop_time, status_file, ward, num_from = None, num_to = None):
     global extend_time
@@ -151,7 +152,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     gf.killer = GracefulKiller()
-    signal.signal(signal.SIGSEGV, signal_sigfault)
+    signal.signal(signal.SIGSEGV, signal_segfault)
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
     delete_ready = True # script will create a new broadcast endpoint after the delete process, an existing ready broadcasts will interfere since we're not creating seperate endpoints for each broadcast, so delete any ready broadcasts to prevent problems
