@@ -18,11 +18,15 @@ import argparse
 import os
 import traceback
 import json
+from datetime import datetime
 from twilio.rest import Client # pip3 install twilio
+import global_file as gf
 
 #Twilio account sid and auth token
 #two line ascii text file, first line account sid, second line auth token
 TWILIO_AUTH = 'twilio.auth'
+
+SMS_FIFO_LENGTH = 5
 
 if os.path.exists(TWILIO_AUTH):
     try:
@@ -40,13 +44,23 @@ def send_sms(num_from, num_to, sms_message, verbose = False):
     try:
         if(type(num_to) != list):
             num_to = [num_to]
-
-        for number in num_to:
-            message = client.messages.create(
-                             body=sms_message,
-                             from_=num_from,
-                             to=number
-                         )
+        
+        # want to be able to disable SMS in the event of some issue that's causing mass-sms messages
+        # check for presense of text file and don't send is it's there
+        if( not os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/disable_sms')):
+            if( not (len(gf.sms_fifo) >= SMS_FIFO_LENGTH and ((datetime.now() - gf.sms_fifo[0]).total_seconds() / 60) <= 1)): # check to see if the last message int he FIFO is more than 1 minute old
+                gf.sms_fifo.append(datetime.now())
+                if(len(gf.sms_fifo) > SMS_FIFO_LENGTH):
+                    gf.sms_fifo.pop(0)
+                for number in num_to:
+                    message = client.messages.create(
+                                     body=sms_message,
+                                     from_=num_from,
+                                     to=number
+                                 )
+            else:
+                print("!!Rate limit hit on SMS!!")
+                print(sms_message)
     except:
         if(verbose): print(traceback.format_exc())
         print("SMS Send Failure")

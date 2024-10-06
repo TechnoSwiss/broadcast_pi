@@ -48,9 +48,10 @@ class GracefulKiller:
   def __init__(self):
     signal.signal(signal.SIGINT, self.exit_gracefully)
     signal.signal(signal.SIGTERM, self.exit_gracefully)
+    signal.signal(signal.SIGHUP, self.exit_gracefully)
 
   def exit_gracefully(self,signum, frame):
-    print('\n!!Received SIGINT or SIGTERM!!')
+    print("\n!!Received SIGNAL/{}!!".format(str(signum)))
     self.kill_now = True
 
 # this was the original Ctrl+C handler, this shoudln't be getting called anywhere now that GracefulKiller is being used
@@ -61,11 +62,13 @@ def signal_handler(sig, frame):
 # sigfault happening and seemed to be re-segfaulting trying to send SMS alert
 # exit with a non-zero code and handle notification / restart outside script
 def signal_segfault(sig, frame):
-    print("!!SEGFAULT!!")
-    faulthandler.dump_traceback(file=sys.stdout, all_threads=True)
+#    print("!!SEGFAULT!!")
+#    faulthandler.dump_traceback(file=sys.stdout, all_threads=True)
 #    if(num_from is not None and num_to is not None):
 #        sms.send_sms(num_from, num_to, ward + " SEGFAULT occured!", verbose)
-    sys.exit(1)
+#    gf.killer.kill_now = True
+#   os._exit(1) 
+    sys.exit("Caught SegFault, exit and handle notification and restart from outside script")
 
 def check_extend(extend_file, stop_time, status_file, ward, num_from = None, num_to = None):
     global extend_time
@@ -151,17 +154,22 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False,action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    gf.killer = GracefulKiller()
-    signal.signal(signal.SIGSEGV, signal_segfault)
-
-    delete_current = True # in keeping with guidence not to record sessions, delete the current session
-    delete_ready = True # script will create a new broadcast endpoint after the delete process, an existing ready broadcasts will interfere since we're not creating seperate endpoints for each broadcast, so delete any ready broadcasts to prevent problems
-    delete_complete = True # in most cases there shouldn't be any completed broadcasts (they should have gotten deleted at the end of the broadcast), however some units are uploading broadcasts that we may want to save so this could be switched to False
-
     verbose = args.verbose
     num_from = args.num_from
     num_to = args.num_to
     ward = args.ward
+
+    gf.killer = GracefulKiller()
+    signal.signal(signal.SIGSEGV, signal_segfault)
+    
+    for n in range(6):
+        print("sleep number {}".format(str(n)))
+        gf.sleep(1, 3)
+    #os.kill(os.getpid(), signal.SIGSEGV)
+
+    delete_current = True # in keeping with guidence not to record sessions, delete the current session
+    delete_ready = True # script will create a new broadcast endpoint after the delete process, an existing ready broadcasts will interfere since we're not creating seperate endpoints for each broadcast, so delete any ready broadcasts to prevent problems
+    delete_complete = True # in most cases there shouldn't be any completed broadcasts (they should have gotten deleted at the end of the broadcast), however some units are uploading broadcasts that we may want to save so this could be switched to False
 
     if(args.delete_control is not None):
         if(args.delete_control & 0x01):
@@ -314,7 +322,7 @@ if __name__ == '__main__':
 
     if(args.audio_gain is not None and args.audio_gate is not None):
         print("!!Audio Gain and Audio Gate are mutually exclusive!!")
-        sys.exit("Audio Fain and Audio Gate are mutually exclusive")
+        sys.exit("Audio Gain and Audio Gate are mutually exclusive")
     if(ward is None):
         print("!!Ward is required argument!!")
         sys.exit("Ward is required argument")
@@ -870,6 +878,8 @@ if __name__ == '__main__':
     # leave terminal in a working state on exit but only if running from command line
     if sys.stdin and sys.stdin.isatty():
         os.system('stty sane')
+
+  #except SystemExit:
 
   except:
     if(verbose): print(traceback.format_exc())

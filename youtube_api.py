@@ -29,7 +29,6 @@ def create_live_event(youtube, title, description, starttime, duration, thumbnai
             part="snippet,contentDetails,status",
             body={
               "contentDetails": {
-                "enableClosedCaptions": captions,
                 "closedCaptionsType": "closedCaptionsDisabled",
                 "enableContentEncryption": True,
                 "enableDvr": True,
@@ -394,8 +393,8 @@ if __name__ == '__main__':
     #print(create_stream(youtube, args.ward))
 
     #create_live_event(youtube, args.title, starttime, args.run_time, args.thumbnail, args.ward, None, None, True, None, True)
-    print(get_next_broadcast(youtube, args.ward))
-    #print(get_broadcasts(youtube, args.video_id, args.ward))
+    #print(get_next_broadcast(youtube, args.ward))
+    print(get_broadcast_status(youtube, args.video_id, args.ward))
     #print(get_live_broadcast(youtube, args.ward))
     #print(get_stream(youtube, args.ward))
     #bind_broadcast(youtube, args.video_id, "VY-K6BTl3Wjxg61zO9-s0A1599607954801518", args.ward)
