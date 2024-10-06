@@ -12,6 +12,7 @@ ptz_sms_sent = 0
 ptz_sms_max = 5
 
 sms_fifo = []
+sms_missed = 0
 
 save_exceptions_to_file = True
 global_lock = threading.Lock()

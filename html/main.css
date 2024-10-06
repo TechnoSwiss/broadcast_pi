@@ -21,7 +21,7 @@ body {
     position: relative;
 }
 
-#pauseResume, #extend, #previewbutton {
+#pauseResume, #extend, #previewbutton, #viewers {
     padding: 0px;
     text-align: center;
     display: block;
@@ -156,20 +156,20 @@ body {
     position: fixed;
     z-index: 100;
     width: var(--preview-width);
-    height: 10vmin;
+    height: 16vmin;
     margin-left: calc(var(--preview-width) / -2);
     left: 50vw;
 }
 
 .previewopen #previewcontainer, .previewopen #previewbuffer {
-    height: calc(var(--preview-width) * .5625 + 10vmin);
+    height: calc(var(--preview-width) * .5625 + 16vmin);
 }
 
 #preview {
     display: block;
     position: relative;
     min-width: 100%;
-    height: calc(100% - 10vmin);
+    height: calc(100% - 16vmin);
 }
 
 #previewbutton {
@@ -183,10 +183,21 @@ body {
     border-top: 0px;
 }
 
+#viewers {
+    width: 34vmin;
+    margin-left: -17vmin;
+    font-family: Arial;
+    user-select: none;
+    color: black;
+    font-size: 4vmin;
+    background-color: darkkhaki;
+    height: 6vmin;
+    border-top: 0px;
+}
+
 #previewbuffer {
     position: relative;
     z-index: 0;
     background-color: white;
 }
-
 

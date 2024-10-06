@@ -40,7 +40,7 @@ if os.path.exists(TWILIO_AUTH):
 
 client = Client(account_sid, auth_token)
 
-def send_sms(num_from, num_to, sms_message, verbose = False):
+def send_sms(num_from, num_to, sms_message, verbose = False, bypass_limit = False):
     try:
         if(type(num_to) != list):
             num_to = [num_to]
@@ -48,7 +48,7 @@ def send_sms(num_from, num_to, sms_message, verbose = False):
         # want to be able to disable SMS in the event of some issue that's causing mass-sms messages
         # check for presense of text file and don't send is it's there
         if( not os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/disable_sms')):
-            if( not (len(gf.sms_fifo) >= SMS_FIFO_LENGTH and ((datetime.now() - gf.sms_fifo[0]).total_seconds() / 60) <= 1)): # check to see if the last message int he FIFO is more than 1 minute old
+            if(bypass_limit or not (len(gf.sms_fifo) >= SMS_FIFO_LENGTH and ((datetime.now() - gf.sms_fifo[0]).total_seconds() / 60) <= 1)): # check to see if the last message int he FIFO is more than 1 minute old
                 gf.sms_fifo.append(datetime.now())
                 if(len(gf.sms_fifo) > SMS_FIFO_LENGTH):
                     gf.sms_fifo.pop(0)
@@ -59,6 +59,7 @@ def send_sms(num_from, num_to, sms_message, verbose = False):
                                      to=number
                                  )
             else:
+                gf.sms_missed = gf.sms_missed + 1
                 print("!!Rate limit hit on SMS!!")
                 print(sms_message)
     except:

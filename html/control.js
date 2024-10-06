@@ -32,6 +32,27 @@ $(function () {
 	return ` on ${dow}, ${mon} ${day} at ${hour}:${min}${ampm}`;
     };
 
+    let setViewersText = (viewers, status) => {
+	if(viewers === undefined) {
+	    return;
+	}
+	if(status === undefined) {
+            return;
+        }
+	switch(status) {
+        case 'broadcast':
+        case 'start':
+	case 'pause':
+        case 'paused':
+            $('#viewers').text(`Viewers ( ${viewers} )`);
+	    break;
+	case 'stop':
+        case 'holding':
+   	    $('#viewers').text(`Viewers ( -- )`);
+	    break;
+	}
+    }
+
     let setStatusText = (status) => {
 	if(status === undefined) {
 	    return;
@@ -208,6 +229,8 @@ $(function () {
             .done(function (data) {
 		console.log(data);
 		let buttonPaused = data.buttonPaused;
+
+		let viewers = data.viewers;
 		
 		let status = parseStatus(data);
 
@@ -226,6 +249,8 @@ $(function () {
 		console.log(status);
 		
 		setButtonStatus(status.state);
+
+		setViewersText(viewers, status.state);
 
 		setStatusText(status);
 

@@ -132,7 +132,10 @@ def get_next_broadcast(youtube, ward, num_from = None, num_to = None, verbose = 
             if(video['status']['lifeCycleStatus'] == 'ready' or
                video['status']['lifeCycleStatus'] == 'live' or
                video['status']['lifeCycleStatus'] == 'created'):
-                starttime = dateutil.parser.parse(video['snippet']['scheduledStartTime'])
+                if( 'scheduledStartTime' in video['snippet'].keys() ):
+                    starttime = dateutil.parser.parse(video['snippet']['scheduledStartTime'])
+                else:
+                    starttime = dt.datetime.now().replace(tzinfo=tz.tzlocal())
                 delta = abs((starttime - dt.datetime.now().replace(tzinfo=tz.tzlocal())).total_seconds())
                 videos[video['id']] = delta
 
@@ -391,10 +394,10 @@ if __name__ == '__main__':
     youtube = google_auth.get_authenticated_service(credentials_file, args)
 
     #print(create_stream(youtube, args.ward))
-
+    print(get_broadcasts(youtube, args.ward))
     #create_live_event(youtube, args.title, starttime, args.run_time, args.thumbnail, args.ward, None, None, True, None, True)
-    #print(get_next_broadcast(youtube, args.ward))
-    print(get_broadcast_status(youtube, args.video_id, args.ward))
+    print(get_next_broadcast(youtube, args.ward))
+    #print(get_broadcast_status(youtube, args.video_id, args.ward))
     #print(get_live_broadcast(youtube, args.ward))
     #print(get_stream(youtube, args.ward))
     #bind_broadcast(youtube, args.video_id, "VY-K6BTl3Wjxg61zO9-s0A1599607954801518", args.ward)

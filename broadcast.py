@@ -70,6 +70,12 @@ def signal_segfault(sig, frame):
 #   os._exit(1) 
     sys.exit("Caught SegFault, exit and handle notification and restart from outside script")
 
+def check_report_missed_sms(ward, num_from = None, num_to = None, verbose = None):
+    if(gf.sms_missed > 0):
+        print("There were (" + str(gf.sms_missed) + ") missed SMS messages.")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " broadcast had (" + str(gf.sms_missed) + ") missed SMS messages!", verbose)
+
 def check_extend(extend_file, stop_time, status_file, ward, num_from = None, num_to = None):
     global extend_time
     if os.path.exists(extend_file):
@@ -117,6 +123,11 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
     print("Live broadcast ID has been verified.")
 
 if __name__ == '__main__':
+  verbose = False
+  num_from = None
+  num_to = None
+  ward = "Undefined"
+
   try:
     parser = argparse.ArgumentParser(description='Broadcast Live Ward Meeting to YouTube')
     parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
@@ -161,7 +172,8 @@ if __name__ == '__main__':
 
     gf.killer = GracefulKiller()
     signal.signal(signal.SIGSEGV, signal_segfault)
-    
+
+    # belive this was added so that is the script is restarted by systemd we don't end up crashing and restarting instantly over and over again
     for n in range(6):
         print("sleep number {}".format(str(n)))
         gf.sleep(1, 3)
@@ -334,6 +346,9 @@ if __name__ == '__main__':
         print("!!testing is active!!")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " testing is active!", verbose)
+        # SMS testing line, remove after testing
+        for i in range(10):
+            sms.send_sms(num_from, num_to, ward + " test message : #" + str(i), verbose)
 
     start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, ward, num_from, num_to, verbose)
 
@@ -442,8 +457,8 @@ if __name__ == '__main__':
     #kick off broadcast
     ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
     ffmpeg_lbw = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters_lbw + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 1024k -maxrate 1024k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if camera_parameters_lbw is not None else ffmpeg
-    ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -loop 1 -i ' + audio_only_image + ' -c:v libx264 -filter:v fps=fps=4 -g 7 -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if audio_only_image is not None else ffmpeg
-    ffmpeg_img = 'ffmpeg -thread_queue_size 2048 -f lavfi -i anullsrc -thread_queue_size 2048 -loop 1 -i ' + args.pause_image + ' -c:v libx264 -filter:v fps=fps=4 -g 7 -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
+    ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -loop 1 -i ' + audio_only_image + ' -c:v libx264 -filter:v fps=fps=15 -g 7 -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if audio_only_image is not None else ffmpeg
+    ffmpeg_img = 'ffmpeg -thread_queue_size 2048 -f lavfi -i anullsrc -thread_queue_size 2048 -loop 1 -i ' + args.pause_image + ' -c:v libx264 -vf "drawtext=font=calibri-bold:fontsize=56:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=835,fps=4" -g 7 -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
 
     broadcast_stream = [ffmpeg, ffmpeg_lbw, ffmpeg_audio]
     broadcast_index = 0
@@ -875,6 +890,8 @@ if __name__ == '__main__':
         print("ffmpeg still running from current broadcast.")
         if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward ffmpeg still running from current broadcast!", verbose)
 
+    check_report_missed_sms(ward, num_from, num_to, verbose)
+
     # leave terminal in a working state on exit but only if running from command line
     if sys.stdin and sys.stdin.isatty():
         os.system('stty sane')
@@ -885,5 +902,6 @@ if __name__ == '__main__':
     if(verbose): print(traceback.format_exc())
     gf.log_exception(traceback.format_exc(), "crashed out of broadcast.py")
     print("Crashed out of broadcast.py")
+    check_report_missed_sms(ward, num_from, num_to, verbose)
     if(num_from is not None and num_to is not None):
         sms.send_sms(num_from, num_to, ward + " crashed out of broadcast.py!", verbose)    

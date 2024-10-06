@@ -39,6 +39,17 @@ if(preg_match("/resume/i", $action)) {
     #fwrite($presetfile, "0\n");
 }
 
+$viewers = 0;
+$viewerfile = fopen("$path/watching", "r") or die("Unable to open viewer file!");
+while(!feof($viewerfile))
+{
+	$watching = trim(fgets($viewerfile));
+	if(preg_match('/^[1-9][0-9]{0,15}$/',$watching)) {
+            $viewers = $watching;
+	}
+}
+fclose($viewerfile);
+
 $schedule = [];
 $statusfile = fopen("$path/status", "r") or die("Unable to open status file!");
 
@@ -69,6 +80,7 @@ if(file_exists("$path/preset")) {
 }
 
 $data["buttonPaused"] = $buttonPaused;
+$data["viewers"] = $viewers;
 $data["schedule"] = $schedule;
 $data["bandwidth"] = $bandwidth;
 $data["preset"] = $preset;
