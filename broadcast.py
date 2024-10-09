@@ -110,7 +110,7 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
         if(live_id is not None and live_id != current_id):
             print("Live ID doesnt't match current ID, updating link")
             print(current_id + " => " + live_id)
-            update_link.update_live_broadcast_link(live_id, args, html_filename, url_filename)
+            update_link.update_live_broadcast_link(live_id, args, ward, html_filename, url_filename)
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " link ID updated!", verbose)
             current_id = live_id
@@ -179,21 +179,6 @@ if __name__ == '__main__':
         gf.sleep(1, 3)
     #os.kill(os.getpid(), signal.SIGSEGV)
 
-    delete_current = True # in keeping with guidence not to record sessions, delete the current session
-    delete_ready = True # script will create a new broadcast endpoint after the delete process, an existing ready broadcasts will interfere since we're not creating seperate endpoints for each broadcast, so delete any ready broadcasts to prevent problems
-    delete_complete = True # in most cases there shouldn't be any completed broadcasts (they should have gotten deleted at the end of the broadcast), however some units are uploading broadcasts that we may want to save so this could be switched to False
-
-    if(args.delete_control is not None):
-        if(args.delete_control & 0x01):
-            print("disable delete current")
-            delete_current = False
-        if(args.delete_control & 0x02):
-            print("disable delete ready")
-            delete_ready = False
-        if(args.delete_control & 0x04):
-            print("disable delete complete")
-            delete_complete = False
-
     extend_time = 0 # keep track of extend time so we can cap it if needed
     recurring = True # is this a recurring broadcast, then create a new broadcast for next week
     broadcast_day = None # for recurring broadcasts, what day of the week is the broadcast
@@ -219,9 +204,9 @@ if __name__ == '__main__':
         if("/" in args.config_file):
             config_file = args.config_file
         else:
-            config_file =  os.path.exists(os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file)
-    if(args.config_file is not None and os.path.exists(args.config_file)):
-        with open(args.config_file, "r") as configFile:
+            config_file =  os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file
+    if(config_file is not None and os.path.exists(config_file)):
+        with open(config_file, "r") as configFile:
             config = json.load(configFile)
 
             # check for keys in config file
@@ -346,9 +331,6 @@ if __name__ == '__main__':
         print("!!testing is active!!")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " testing is active!", verbose)
-        # SMS testing line, remove after testing
-        for i in range(10):
-            sms.send_sms(num_from, num_to, ward + " test message : #" + str(i), verbose)
 
     start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, ward, num_from, num_to, verbose)
 
@@ -452,7 +434,7 @@ if __name__ == '__main__':
         insert_event.bind_event(youtube, current_id, ward, num_from, num_to, verbose)
 
     #make sure link on web host is current
-    update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
+    update_link.update_live_broadcast_link(current_id, args, ward, args.html_filename, args.url_filename)
 
     #kick off broadcast
     ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
@@ -637,7 +619,7 @@ if __name__ == '__main__':
                         sms.send_sms(num_from, num_to, ward + " main stream died! (" + str(process_poll_failure) + ")", verbose)
                 else:
                     process_poll_clear += 1
-                    if(process_poll_clear > PROCESS_POLL_CLEAR_AFTER):
+                    if(process_poll_failure > 0 and process_poll_clear > PROCESS_POLL_CLEAR_AFTER):
                         if(verbose): print("clear process failure")
                         process_poll_failure = 0
 
@@ -756,11 +738,8 @@ if __name__ == '__main__':
         # this time while we wait before deleting the video is to allow people
         # time to finish watching the stream if they started late because of this
         # we want to continue getting viewer updates, so don't email until time runs out
-        print("video(s) deletion routine will run at {}".format((datetime.now() + timedelta(minutes=int(args.delay_after))).strftime("%d-%b-%Y %H:%M:%S")))
-        # wait for X min before deleting video
-        delete_time = datetime.now() + timedelta(minutes=args.delay_after)
-        while(datetime.now() < delete_time and not gf.killer.kill_now):
-            time.sleep(1)
+        run_deletion_time = datetime.now() + timedelta(minutes=int(args.delay_after))
+        print("video(s) deletion routine will run at {}".format(run_deletion_time.strftime("%H:%M %Y-%m-%d")))
     else:
         # keep hitting a crash here with the viewers script, adding a delay for this case to prevent possble race condition
         time.sleep(5)
@@ -777,12 +756,6 @@ if __name__ == '__main__':
 
         if 'testing' in config:
             testing |= config['testing']
-        if 'delete_current' in config:
-            delete_current = config['delete_current']
-        if 'delete_completed' in config:
-            delete_complete = config['delete_completed']
-        if 'delete_ready' in config:
-            delete_ready = config['delete_ready']
         if 'email_send' in config:
             email_send = config['email_send']
 
@@ -794,72 +767,55 @@ if __name__ == '__main__':
         if(args.email_from is not None and args.email_to is not None):
             send_email.send_viewer_file(ward.lower() + '_viewers.csv', args.email_from, args.email_to, ward, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
 
-    try:
-        # delete the recording we just finished
-        # if forcibly killing process, don't delete video
-        if(delete_current and not gf.killer.kill_now):
-            youtube.videos().delete(id=current_id).execute()
-            print("Delete current broadcast")
+    # schedule video deletion task
+    # don't setup deletion if forcibly killing process
+    if(not gf.killer.kill_now):
+        deletion_command = 'echo ' + os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
+        if(args.config_file is not None):
+            deletion_command = deletion_command + ' -c ' + args.config_file
+        if(args.ward is not None):
+            deletion_command = deletion_command + ' -w ' + args.ward
+        if(args.title is not None):
+            deletion_command = deletion_command + ' -i \\"' + args.title + '\\"'
+        if(args.status_file is not None):
+            deletion_command = deletion_command + ' -S ' + args.status_file
+        if(args.thumbnail is not None):
+            deletion_command = deletion_command + ' -n ' + args.thumbnail
+        if(args.host_name is not None):
+            deletion_command = deletion_command + ' -o ' + args.host_name
+        if(args.user_name is not None):
+            deletion_command = deletion_command + ' -u ' + args.user_name
+        if(args.home_dir is not None):
+            deletion_command = deletion_command + ' -H ' + args.home_dir
+        if(args.url_filename is not None):
+            deletion_command = deletion_command + ' -U ' + args.url_filename
+        if(args.html_filename is not None):
+            deletion_command = deletion_command + ' -L ' + args.html_filename
+        if(args.url_key is not None):
+            deletion_command = deletion_command + ' -k ' + args.url_key
+        if(args.start_time is not None):
+            deletion_command = deletion_command + ' -s ' + args.start_time
+        if(args.run_time is not None):
+            deletion_command = deletion_command + ' -t ' + args.run_time
+        if(args.delete_control is not None):
+            deletion_command = deletion_command + ' -D ' + args.delete_control
+        deletion_command = deletion_command + ' -C \\"' + current_id + '\\"'
+        if(args.num_from is not None):
+            deletion_command = deletion_command + ' -F ' + args.num_from
+        if(args.num_to is not None and type(args.num_to) is not list):
+            deletion_command = deletion_command + ' -T ' + args.num_to
+        if(args.verbose is not None):
+            if(args.verbose):
+                deletion_command = deletion_command + ' -v'
+        # create next weeks broadcast if recurring
+        # don't create a new broadcast if forcibly killing process
+        if(recurring):
+            deletion_command = deletion_command + ' -I'
 
-        # delete all completed videos in Live list
-        # delete all ready videos as they will cause problems for the new broadcast we will insert at the end of the script
-        broadcasts = yt.get_broadcasts(youtube, ward, num_from, num_to, verbose)
-        if(broadcasts is not None and not gf.killer.kill_now):
-            for video_id, video_status in broadcasts.items():
-                if((delete_complete and video_status == "complete")
-                    or (delete_ready and (video_status == "ready"))): # if the broadcast got created but not bound it will be in created instead of ready state, since an un-bound broadcast can't unexpectedly accept a stream we'll leave these
-                    if(video_id != current_id): # if current_id is still in list, then we've skipped deleting it above, so don't delete now.
-                        try:
-                            if(video_status == "complete"):
-                                print("Delete complete broadcast " + video_id)
-                            if(video_status == "ready"):
-                                print("Delete ready broadcast " + video_id)
-                            youtube.videos().delete(id=video_id).execute()
-                        except:
-                            if(verbose): print(traceback.format_exc())
-                            gf.log_exception(traceback.format_exc(), "failed to delete complete/ready broadcast(s)")
-                            print("Failed to delete complete/ready broadcast " + video_id)
-                            if(num_from is not None and num_to is not None):
-                                sms.send_sms(num_from, num_to, ward + " failed to delete complete/ready broadcast " + video_id + "!", verbose)
-    except:
-        if(verbose): print(traceback.format_exc())
-        gf.log_exception(traceback.format_exc(), "failed to delete broadcast")
-        print("Failed to delete broadcast " + video_id)
-        if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to delete broadcast " + video_id + "!", verbose)
-
-    # create next weeks broadcast if recurring
-    # don't create a new broadcast is forcibly killing process
-    if(recurring and not gf.killer.kill_now):
-        print("Create next weeks broadcast")
-        if(broadcast_day is None):
-            next_date = datetime.strftime(start_time + timedelta(days=7), '%m/%d/%y')
-        else:
-            import calendar
-            days = dict(zip([x.lower() for x in calendar.day_abbr], range(7)));
-
-            try:
-                next_days = ((7 + days[broadcast_day[0:3].lower()]) - start_time.weekday()) % 7
-                if(next_days == 0) : next_days = 7
-                next_date = datetime.strftime(start_time + timedelta(days=next_days), '%m/%d/%y')
-            except:
-                if(verbose): print(traceback.format_exc())
-                print("Failed to get next broadcast date")
-                if(num_from is not None and num_to is not None):
-                    sms.send_sms(num_from, num_to, ward + " failed to get next broadcast date!", verbose)
-        # create a broadcast endpoint for next weeks video
-        start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, next_date, ward, num_from, num_to, verbose)
-        current_id = insert_event.insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, ward, num_from, num_to, verbose)
-
-         # update status file with next start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-        update_status.update("start", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
-
-        if(current_id is None):
-            print("Failed to create new broadcast for next week")
-            if(num_from is not None and num_to is not None): sms.send_sms(num_from, num_to, ward + " failed to create broadcast for next week!", verbose)
-
-        # make sure link on web host is current
-        update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
+        if(verbose) : print(deletion_command)
+        ps = subprocess.Popen(split(deletion_command), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        subprocess.run(["at", run_deletion_time.strftime("%H:%M %Y-%m-%d")], stdin=ps.stdout)
+        ps.wait()
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     try:

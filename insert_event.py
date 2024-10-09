@@ -142,4 +142,4 @@ if __name__ == '__main__':
         if(args.status_file is not None):
             update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
         #make sure link on web host is current
-        update_link.update_live_broadcast_link(current_id, args, args.html_filename, args.url_filename)
+        update_link.update_live_broadcast_link(current_id, args, args.ward, args.html_filename, args.url_filename)

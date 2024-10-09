@@ -81,7 +81,7 @@ if __name__ == '__main__':
     parser.add_argument('-S','--status-file',type=str,default='status',help='Path and fineame for file used to write out Start/Stop time status.')
     parser.add_argument('-s','--start-time',type=str,help='Broadcast start time in HH:MM:SS')
     parser.add_argument('-t','--run-time',type=str,default='1:10:00',help='Broadcast run time in HH:MM:SS')
-    parser.add_argument('-C','--start-date',type=str,help='Broadcast run date in MM/DD/YY, use for setting up future broadcasts')
+    parser.add_argument('-A','--start-date',type=str,help='Broadcast run date in MM/DD/YY, use for setting up future broadcasts')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')

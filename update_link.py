@@ -62,7 +62,7 @@ def list_my_uploaded_videos(youtube, uploads_playlist_id):
             playlistitems_list_request, playlistitems_list_response)
     return video_list
 
-def update_live_broadcast_link(live_broadcast_id, args, path_filename = None, filename = None, verbose = False):
+def update_live_broadcast_link(live_broadcast_id, args, ward, path_filename = None, filename = None, verbose = False):
     if(args.host_name is None):
         print("Nothing to update.")
         return()
@@ -103,7 +103,7 @@ def update_live_broadcast_link(live_broadcast_id, args, path_filename = None, fi
                         if(path_filename is not None):
                             scp.put('link.html', path_filename)
                         else:
-                            scp.put('link.html', 'public_html/broadcast/' + (filename if (filename is not None) else args.ward.lower()) + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
+                            scp.put('link.html', 'public_html/broadcast/' + (filename if (filename is not None) else ward.lower()) + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html')
                 break
             except Exception as exc:
                 exception = exc
@@ -113,9 +113,9 @@ def update_live_broadcast_link(live_broadcast_id, args, path_filename = None, fi
         if exception:
             if(verbose): print(traceback.format_exc())
             print("SSH Host key failure.")
-            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward +  " Ward stake website host key failure!", verbose)
+            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, ward +  " Ward stake website host key failure!", verbose)
     else:
-        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube SSH Key and Password files are required!", verbose)
+        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, ward + " Ward YouTube SSH Key and Password files are required!", verbose)
         print("SSH Key or Password file is missing for link upload.")
         exit()
     
@@ -165,4 +165,4 @@ if __name__ == '__main__':
         exit()
 
     #make sure link on hillsborostake.org is current
-    update_live_broadcast_link(videos[0], args, args.html_filename, None, args.verbose)
+    update_live_broadcast_link(videos[0], args, args.ward, args.html_filename, None, args.verbose)
