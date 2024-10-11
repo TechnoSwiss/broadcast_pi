@@ -16,6 +16,8 @@ import google_auth # google_auth.py local file
 import sms #sms.py local file
 import global_file as gf # local file for sharing globals between files
 
+import gspread # pip install gspread==2.0.0
+
 NUM_RETRIES = 5
 
 # YouTube no longer has a default broadcast, so the only ways to have a new broadcast created are to use the GoLive button in YouTube Studio, or to use the API and create a new live event. AutoStart is selected so the broadcast goes live as soon as you start streaming data to it. AutoStop is turned off so that if something causs a hiccup in the stream, YouTube won't close out the video before you're ready (had that happen on a few occasions) Because this stream is going out to families, including children I've set this to mark the videos as made for children. This causes many things to be tuned off (like monatization, personalized ads, comments and live chat) but I don't think any of those effect what we're trying to accomplish here.
@@ -348,6 +350,35 @@ def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbo
             sms.send_sms(num_from, num_to, ward + " failed to stop broadcast!", verbose)
 
 # Gets the current number of viewers of the video specified by videoID, so those numbers can be reported out
+def get_view_count(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
+    exception = None
+    for retry_num in range(NUM_RETRIES):
+        exception = None
+        try:
+            videoDetails = youtube.videos().list(
+                part='statistics',
+                id=videoID
+            ).execute()
+            if('viewCount' in videoDetails['items'][0]['statistics']):
+                totalViews = videoDetails['items'][0]['statistics']['viewCount']
+            else:
+                totalViews = 0
+            break
+        except Exception as exc:
+            exception = exc
+            if(verbose): print('!!Concurrent Viewers Retry!!')
+            gf.sleep(1, 3)
+    if exception:
+        totalViews = -1
+        if(verbose): print(traceback.format_exc())
+        gf.log_exception(traceback.format_exc(), "failed to get concurrent viewers")
+        print("Failed to get concurrent viewers")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!", verbose)
+
+    return(totalViews)
+
+# Gets the current number of viewers of the video specified by videoID, so those numbers can be reported out
 def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
     exception = None
     for retry_num in range(NUM_RETRIES):
@@ -375,6 +406,29 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
             sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!", verbose)
 
     return(currentViewers)
+
+def next_available_row(sheet, column, cols_to_sample=2):
+  # looks for empty row based on values appearing in 1st N columns
+  cols = sheet.range(1, column, sheet.row_count, column + cols_to_sample - 1)
+  return max([cell.row for cell in cols if cell.value]) + 1
+
+def get_sheet_row_and_column(googleDoc, videoID, ward, num_from = None, num_to = None, verbose = None):
+    client = gspread.authorize(google_auth.get_credentials_google_drive(ward, num_from, num_to, verbose))
+    sheet = client.open(googleDoc).worksheet(ward)
+    try:
+        column = sheet.find(videoID)
+    except gspread.exceptions.CellNotFound:
+        column = None
+    if(column is None):
+        column = sheet.col_count + 1
+        sheet.add_cols(2)
+        sheet.update_cell(1,column, videoID)
+    else:
+        column = column.col
+
+    insert_row = next_available_row(sheet, column)
+
+    return sheet, column, insert_row
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='YouTube API Interaction')

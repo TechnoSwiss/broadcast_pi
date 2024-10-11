@@ -42,7 +42,48 @@ def ordinal(n):
         suffix = 'th'
     return str(n) + suffix
 
-def send_viewer_file(csv_file, email_from, email_to, ward, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
+def send_total_views(email_from, email_to, ward, total_views, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
+    sender_domain = email_from.split('@')[-1]
+    # added a JSON configuration file that allows creating this as a list
+    # so need to be able to turn it into a comma seperated string
+    if(type(email_to) == list):
+        email_to = ",".join(email_to)
+    msg = MIMEMultipart()
+    msg["From"] = email_from
+    msg["To"] = email_to
+    msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast final view(s) count"
+    msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
+    msg.attach(MIMEText("There were " + total_views + " total view(s) recorded by YouTube.", 'plain'))
+
+    try:
+        if(dkim_private_key and dkim_selector):
+            with open(dkim_private_key) as fh:
+                dkim_private_key = fh.read()
+            headers = ['To', 'From', 'Subject']
+            sig = dkim.sign(
+                message=msg.as_bytes(),
+                selector=dkim_selector.encode(),
+                domain=sender_domain.encode(),
+                privkey=dkim_private_key.encode(),
+                include_headers=headers
+            )
+            msg["DKIM-Signature"] = sig[len("DKIM-Signature: "):].decode()
+
+        port = 465 #for SSL
+
+        # Create a secure SSL context
+        context = ssl.create_default_context()
+
+        with smtplib.SMTP_SSL(email_auth[email_from]['server'], port, context=context) as server:
+            server.login(email_from, email_auth[email_from]['password'])
+            server.sendmail(email_from, email_to.split(','),msg.as_string())
+    except:
+        if(verbose): print(traceback.format_exc())
+        print("Failed to send CSV file email")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to send current viewers!", verbose)
+
+def send_viewer_file(csv_file, email_from, email_to, ward, total_views, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
     sender_domain = email_from.split('@')[-1]
     # added a JSON configuration file that allows creating this as a list
     # so need to be able to turn it into a comma seperated string
@@ -53,7 +94,7 @@ def send_viewer_file(csv_file, email_from, email_to, ward, dkim_private_key = No
     msg["To"] = email_to
     msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast"
     msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
-    msg.attach(MIMEText("Please open the attached file in a spreadsheet (Excel/Google Docs).", 'plain'))
+    msg.attach(MIMEText("There were " + total_views + " total view(s) recorded by YouTube.\nFor breakdown of concurrent viewers during broadcast,\nplease open the attached file in a spreadsheet app. (Excel/Google Docs).", 'plain'))
 
     try:
         with open(csv_file) as fp:
@@ -102,4 +143,4 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    send_viewer_file(args.viewers_file, args.email_from, args.email_to, args.ward, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+    send_viewer_file(args.viewers_file, args.email_from, args.email_to, args.ward, 0, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)

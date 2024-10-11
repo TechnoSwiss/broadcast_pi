@@ -15,7 +15,12 @@ import sms # sms.py local file
 import send_email # send_email.py localfile
 import global_file as gf # local file for sharing globals between files
 
-def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, statusFile = None):
+import gspread # pip install gspread==2.0.0
+
+def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, statusFile = None, googleDoc = 'Broadcast Viewers'):
+    if(googleDoc is not None):
+        sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, videoID, ward, num_from, num_to, verbose)
+
     while True:
       # check video id in global file to see if we need to update the video id that we're monitoring
       if(gf.current_id and gf.current_id != videoID):
@@ -35,6 +40,16 @@ def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None
       if(statusFile is not None):
           statusFile.write(numViewers + '\n')
           statusFile.flush()
+      if(googleDoc is not None):
+          try:
+              sheet.update_cell(insert_row,column, datetime.now().strftime("%m/%d/%Y %H:%M:%S"))
+              sheet.update_cell(insert_row,column+1, numViewers)
+              insert_row = insert_row + 1
+          except:
+            if(verbose): print(traceback.format_exc())
+            print("Error attempting to write Google Doc")
+            if(num_from is not None and num_to is not None):
+                sms.send_sms(num_from, num_to, ward + " failed to write Google Doc!", verbose)
       time.sleep(30)
 
 def count_viewers(filename, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, status = None):
@@ -75,5 +90,5 @@ if __name__ == '__main__':
     count.join()
 
     if(args.email_from is not None and args.email_to is not None):
-        send_email.send_viewer_file('viewers.csv', args.email_from, args.email_to, args.ward, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+        send_email.send_viewer_file('viewers.csv', args.email_from, args.email_to, args.ward, yt.get_view_count(youtube, args.video_id,args. ward, args.num_from, args.num_to, args.verbose), args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
 

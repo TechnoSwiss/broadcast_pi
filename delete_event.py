@@ -11,9 +11,12 @@ import google_auth # google_auth.py local file
 import update_link # update_link.py local file
 import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
+import send_email # send_email.py local file
 import update_status # update_status.py localfile
 import insert_event # insert_event.py local file
 import global_file as gf # local file for sharing globals between files
+
+import gspread # pip install gspread==2.0.0
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Insert Live Broadcast in YouTube Live list.')
@@ -33,6 +36,11 @@ if __name__ == '__main__':
     parser.add_argument('-D','--delete-control',type=int,help='Control delete options from command line, bit mapped. delete_current 1 : delete_ready 2 : delete_complete 4')
     parser.add_argument('-C','--current-id',type=str,help='ID value for the current broadcast, used if deleting current broadcast is true')
     parser.add_argument('-I','--insert-next-broadcast',default=False, action='store_true',help='Insert next broadcast, this should only be used if calling from broadcast.py')
+    parser.add_argument('--email-send',default=False, action='store_true',help='Should email be sent when deleting video(s)')
+    parser.add_argument('-e','--email-from',type=str,help='Account to send email with/from')
+    parser.add_argument('-E','--email-to',type=str,help='Account to send CSV fiel email to')
+    parser.add_argument('-M','--dkim-private-key',type=str,help='Full path and filename of DKIM private key file')
+    parser.add_argument('-m','--dkim-selector',type=str,help='DKIM Domain Selector')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
@@ -44,6 +52,8 @@ if __name__ == '__main__':
     ward = args.ward
     current_id = args.current_id
     insert_next_broadcast = args.insert_next_broadcast
+    email_send = args.email_send
+    googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
     delete_ready = True # script will create a new broadcast endpoint after the delete process, an existing ready broadcasts will interfere since we're not creating seperate endpoints for each broadcast, so delete any ready broadcasts to prevent problems
@@ -107,6 +117,16 @@ if __name__ == '__main__':
                 args.home_dir = config['url_ssh_key_dir']
             if 'broadcast_status' in config:
                 args.status_file = config['broadcast_status']
+            if 'email_send' in config:
+                email_send = config['email_send']
+            if 'email_from_account' in config:
+                args.email_from = config['email_from_account']
+            if 'email_dkim_key' in config:
+                args.dkim_private_key = config['email_dkim_key']
+            if 'email_dkim_domain' in config:
+                args.dkim_selector = config['email_dkim_domain']
+            if 'email_viewer_addresses' in config:
+                args.email_to = config['email_viewer_addresses']
             if 'notification_text_from' in config:
                 num_from = config['notification_text_from']
             if 'notification_text_to' in config:
@@ -123,7 +143,6 @@ if __name__ == '__main__':
 
     start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, ward, num_from, num_to, verbose)
 
-
     credentials_file = ward.lower() + '.auth'
 
     #authenticate with YouTube API
@@ -132,6 +151,16 @@ if __name__ == '__main__':
     # if current_id isn't defined, we can't delete that video
     if(current_id is None):
         delete_current = False
+    else:
+        numViewers = yt.get_view_count(youtube, current_id, ward, num_from, num_to, verbose)
+        if(not testing and email_send):
+            print("e-mail total views")
+            if(args.email_from is not None and args.email_to is not None):
+                send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+        if(googleDoc is not None):
+            sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
+            sheet.update_cell(insert_row,column, "Total Views")
+            sheet.update_cell(insert_row,column+1, numViewers)
 
     try:
         # delete the recording we just finished

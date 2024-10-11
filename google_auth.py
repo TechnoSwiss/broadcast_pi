@@ -16,6 +16,8 @@ from googleapiclient.discovery import build # pip3 install google-api-python-cli
 from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+from oauth2client.service_account import ServiceAccountCredentials
+
 # The CLIENT_SECRETS_FILE variable specifies the name of a file that contains
 # the OAuth 2.0 information for this application, including its client_id and
 # client_secret. You can acquire an OAuth 2.0 client ID and client secret from
@@ -30,9 +32,23 @@ CLIENT_SECRETS_FILE = 'client_secret.json'
 
 # This OAuth 2.0 access scope allows for read-only access to the authenticated
 # user's account, but not other types of account access.
+#SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/yt-analytics.readonly"]
 SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
 API_SERVICE_NAME = 'youtube'
 API_VERSION = 'v3'
+
+# This auth process is for gspread for editing Google Docs
+# The clients scret file can be acquired from the {{ Google Cloud Console }} at
+# {{ https://cloud.google.com/console }}.
+# Create a seperate project for the Google Docs API
+# Please ensure that you have enabled the Google Sheets API and Google Drive API for your project.
+DRIVE_CLIENT_SECRETS_FILE = 'client_key.json'
+
+DRIVE_SCOPES = [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/drive.file'
+    ]
+
 
 def store_authenticated_service(credentials_file):
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
@@ -48,7 +64,7 @@ def store_authenticated_service(credentials_file):
     with open(credentials_file, 'wb') as f:
         pickle.dump(credentials, f)
 
-def get_authenticated_service(credentials_file, args):
+def get_authenticated_service(credentials_file, args, api_service = API_SERVICE_NAME, api_version = API_VERSION):
     # Authorize the request and store authorization credentials.
     if os.path.exists(credentials_file):
         with open(credentials_file, 'rb') as f:
@@ -58,7 +74,17 @@ def get_authenticated_service(credentials_file, args):
         print("YouTube Authorization Required, please run google_auth.py")
         exit()
 
-    return build(API_SERVICE_NAME, API_VERSION, credentials = credentials)
+    return build(api_service, api_version, credentials = credentials)
+
+def get_credentials_google_drive(ward, num_from = None, num_to = None, verbose = False):
+    credentials = None
+    try:
+        credentials = ServiceAccountCredentials.from_json_keyfile_name(DRIVE_CLIENT_SECRETS_FILE, DRIVE_SCOPES)
+    except:
+        if(num_from is not None): sms.send_sms(num_from, num_to, ward + " Ward Failed to get Google Drive Creds!")
+        print("Failed to get Google Drive Creds")
+
+    return credentials
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Store YouTube Authentication')

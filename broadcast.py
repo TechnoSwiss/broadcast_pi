@@ -38,6 +38,8 @@ import presets # presets.py local file
 import local_stream as ls # local_stream.py local file
 import global_file as gf # local file for sharing globals between files
 
+import gspread # pip install gspread==2.0.0
+
 NUM_RETRIES = 5
 EXTEND_TIME_INCREMENT = 5
 MAX_PROCESS_POLL_FAILURE = 3
@@ -197,6 +199,7 @@ if __name__ == '__main__':
     local_stream_control = None
     preset_file = None
     preset_status_file = None
+    googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
 
     testing = True if os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/testing') else False
 
@@ -762,10 +765,16 @@ if __name__ == '__main__':
     # testing automation scripts can generate emails with invalid data
     # and a number of those email can be generated, look for a control
     # file and don't send emails if control file is present
-    if(not testing and send_email):
+    numViewers = yt.get_view_count(youtube, current_id, ward, num_from, num_to, verbose)
+    if(not testing and email_send):
         print("e-mail concurrent viewer file")
         if(args.email_from is not None and args.email_to is not None):
-            send_email.send_viewer_file(ward.lower() + '_viewers.csv', args.email_from, args.email_to, ward, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+            send_email.send_viewer_file(ward.lower() + '_viewers.csv', args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+
+    if(googleDoc is not None):
+        sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
+        sheet.update_cell(insert_row,column, "Views")
+        sheet.update_cell(insert_row,column+1, numViewers)
 
     # schedule video deletion task
     # don't setup deletion if forcibly killing process
@@ -800,6 +809,16 @@ if __name__ == '__main__':
         if(args.delete_control is not None):
             deletion_command = deletion_command + ' -D ' + args.delete_control
         deletion_command = deletion_command + ' -C \\"' + current_id + '\\"'
+        if(email_send):
+            deletion_command = deletion_command + ' --email-send '
+        if(args.email_from is not None and type(args.email_from) is not list):
+            deletion_command = deletion_command + ' -e ' + args.email_from
+        if(args.email_to is not None and type(args.email_to) is not list):
+            deletion_command = deletion_command + ' -E ' + args.email_to
+        if(args.dkim_private_key is not None):
+            deletion_command = deletion_command + ' -M ' + args.dkim_private_key
+        if(args.dkim_selector is not None):
+            deletion_command = deletion_command + ' -m ' + args.dkim_selector
         if(args.num_from is not None):
             deletion_command = deletion_command + ' -F ' + args.num_from
         if(args.num_to is not None and type(args.num_to) is not list):
