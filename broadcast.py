@@ -38,7 +38,7 @@ import presets # presets.py local file
 import local_stream as ls # local_stream.py local file
 import global_file as gf # local file for sharing globals between files
 
-import gspread # pip install gspread==2.0.0
+import gspread # pip3 install gspread==2.0.0
 
 NUM_RETRIES = 5
 EXTEND_TIME_INCREMENT = 5

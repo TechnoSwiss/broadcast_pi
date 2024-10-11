@@ -16,7 +16,7 @@ import google_auth # google_auth.py local file
 import sms #sms.py local file
 import global_file as gf # local file for sharing globals between files
 
-import gspread # pip install gspread==2.0.0
+import gspread # pip3 install gspread==2.0.0
 
 NUM_RETRIES = 5
 

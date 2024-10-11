@@ -15,7 +15,7 @@ import sms # sms.py local file
 import send_email # send_email.py localfile
 import global_file as gf # local file for sharing globals between files
 
-import gspread # pip install gspread==2.0.0
+import gspread # pip3 install gspread==2.0.0
 
 def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, statusFile = None, googleDoc = 'Broadcast Viewers'):
     if(googleDoc is not None):

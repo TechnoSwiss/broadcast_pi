@@ -16,7 +16,7 @@ import update_status # update_status.py localfile
 import insert_event # insert_event.py local file
 import global_file as gf # local file for sharing globals between files
 
-import gspread # pip install gspread==2.0.0
+import gspread # pip3 install gspread==2.0.0
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Insert Live Broadcast in YouTube Live list.')

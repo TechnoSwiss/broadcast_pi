@@ -51,7 +51,7 @@ def send_total_views(email_from, email_to, ward, total_views, dkim_private_key =
     msg = MIMEMultipart()
     msg["From"] = email_from
     msg["To"] = email_to
-    msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast final view(s) count"
+    msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast final view(s) count - " + ward.replace("_", " ")
     msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
     msg.attach(MIMEText("There were " + total_views + " total view(s) recorded by YouTube.", 'plain'))
 
@@ -92,7 +92,7 @@ def send_viewer_file(csv_file, email_from, email_to, ward, total_views, dkim_pri
     msg = MIMEMultipart()
     msg["From"] = email_from
     msg["To"] = email_to
-    msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast"
+    msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast - " + ward.replace("_", " ")
     msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
     msg.attach(MIMEText("There were " + total_views + " total view(s) recorded by YouTube.\nFor breakdown of concurrent viewers during broadcast,\nplease open the attached file in a spreadsheet app. (Excel/Google Docs).", 'plain'))
 
