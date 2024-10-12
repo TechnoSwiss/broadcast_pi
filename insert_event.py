@@ -36,6 +36,7 @@ if __name__ == '__main__':
     parser.add_argument('-U','--url-filename',type=str,help='Use this for web filename instead of Unit name.')
     parser.add_argument('-L','--html-filename',type=str,help='Override default upload path and filename, this must be full path and filename for target webserver')
     parser.add_argument('-k','--url-key',type=str,help='The 4-digit code at the end of the URL')
+    parser.add_argument('-C','--current-id',type=str,help='ID value for the upcoming broadcast, used to bind / update URL for existing video')
     parser.add_argument('-z','--stream',type=int,help='The stream number to attached to this event, use for multiple concurent broadcasts.')
     parser.add_argument('-s','--start-time',type=str,help='Broadcast start time in HH:MM:SS')
     parser.add_argument('-t','--run-time',type=str,default='1:10:00',help='Broadcast run time in HH:MM:SS')
@@ -130,7 +131,10 @@ if __name__ == '__main__':
             if(video_status == "ready"):
                 youtube.videos().delete(id=video_id).execute()
 
-    current_id = insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
+    if(args.current_id is None):
+        current_id = insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
+    else:
+        current_id = args.current_id
 
     if(args.stream is not None):
         bind_event(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose, args.stream)
