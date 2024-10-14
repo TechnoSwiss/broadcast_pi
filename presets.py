@@ -184,16 +184,18 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
     exception = None
     for retry_num in range(NUM_RETRIES):
         exception = None
+        tb = None
         try:
             ptz_cam = Camera(cam_ip)
             break
         except Exception as exc:
             exception = exc
+            tb = traceback.format_exc()
             if(verbose): print('!!VISCA Connection Retry!!')
             gf.sleep(0.5,1)
 
     if exception:
-        if(verbose): print(traceback.format_exc())
+        if(verbose): print(tb)
         print("Failure connecting to VISCA Camera")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " had a failure connecting to the VISCA port on the camera!", verbose)

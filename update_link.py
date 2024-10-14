@@ -89,9 +89,9 @@ def update_live_broadcast_link(live_broadcast_id, args, ward, path_filename = No
     ssh = SSHClient()
     
     if os.path.exists(SSH_RSA_KEY_PASS) and os.path.exists(args.home_dir + '/.ssh/id_rsa'):
-        exception = None
         for retry_num in range(NUM_RETRIES):
             exception = None
+            tb = None
             try:
                 with open(SSH_RSA_KEY_PASS, 'r') as f:
                     ssh_pass = f.read().replace('\n', '')
@@ -107,11 +107,12 @@ def update_live_broadcast_link(live_broadcast_id, args, ward, path_filename = No
                 break
             except Exception as exc:
                 exception = exc
+                tb = traceback.format_exc()
                 if(verbose): print('!!Host Key Failure!!')
                 gf.sleep(0.5,2)
 
         if exception:
-            if(verbose): print(traceback.format_exc())
+            if(verbose): print(tb)
             print("SSH Host key failure.")
             if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, ward +  " Ward stake website host key failure!", verbose)
     else:

@@ -12,10 +12,11 @@ import time
 import smtplib
 import dkim
 import ssl
-from email.mime.multipart import MIMEMultipart
 from email import encoders
 from email.message import Message
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
 
 import sms # sms.py local file
 
@@ -83,7 +84,7 @@ def send_total_views(email_from, email_to, ward, total_views, dkim_private_key =
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to send current viewers!", verbose)
 
-def send_viewer_file(csv_file, email_from, email_to, ward, total_views, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
+def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
     sender_domain = email_from.split('@')[-1]
     # added a JSON configuration file that allows creating this as a list
     # so need to be able to turn it into a comma seperated string
@@ -94,14 +95,27 @@ def send_viewer_file(csv_file, email_from, email_to, ward, total_views, dkim_pri
     msg["To"] = email_to
     msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast - " + ward.replace("_", " ")
     msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
+
+    # Encapsulate the plain and HTML versions of the message body in an
+    # 'alternative' part, so message agents can decide which they want to display.
+    #msgAlternative = MIMEMultipart('alternative')
+    #msgRoot.attach(msgAlternative)
+
     msg.attach(MIMEText("There were " + total_views + " view(s) reported by YouTube.\nFor breakdown of concurrent viewers during broadcast,\nplease open the attached file in a spreadsheet app. (Excel/Google Docs).", 'plain'))
 
     try:
         with open(csv_file) as fp:
             attachment = MIMEText(fp.read(), _subtype='csv')
 
-        attachment.add_header("Content-Disposition", "attachment", filename=csv_file)
+        attachment.add_header('Content-Disposition', 'attachment', filename=csv_file)
         msg.attach(attachment)
+
+        if(os.path.exists(png_file)):
+            with open(png_file, 'rb') as fp:
+                image = MIMEImage(fp.read(), _subtype='png')
+            image.add_header('Content-ID', '<%s>' % 1)
+            image.add_header('Content-Disposition', 'attachment', filename=png_file)
+            msg.attach(image)
 
         if(dkim_private_key and dkim_selector):
             with open(dkim_private_key) as fh:
@@ -141,6 +155,7 @@ if __name__ == '__main__':
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-V','--viewers-file',type=str,default='viewers.csv',help='Filename for Viewers file to send via email')
+    parser.add_argument('--image-file',type=str,default='viewers.pmg',help='Filename for Image file to send via email')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
@@ -185,5 +200,5 @@ if __name__ == '__main__':
         print("!!Email To is a required argument!!")
         exit()
 
+    send_viewer_file(args.viewers_file, args.image_file, args.email_from, args.email_to, ward, '0', args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
     send_total_views(args.email_from, args.email_to, ward, '0', args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
-    send_viewer_file(args.viewers_file, args.email_from, args.email_to, ward, '0', args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)

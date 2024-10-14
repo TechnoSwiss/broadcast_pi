@@ -4,7 +4,9 @@ import argparse
 import os
 import traceback
 import json
+import subprocess
 
+from shlex import split
 from datetime import datetime, timedelta
 
 import google_auth # google_auth.py local file
@@ -17,6 +19,70 @@ import insert_event # insert_event.py local file
 import global_file as gf # local file for sharing globals between files
 
 import gspread # pip3 install gspread==2.0.0
+
+def setup_event_deletion(current_id, email_send, recurring, run_deletion_time, args):
+    try:
+        deletion_command = 'echo ' + os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
+        if(args.config_file is not None):
+            deletion_command = deletion_command + ' -c ' + args.config_file
+        if(args.ward is not None):
+            deletion_command = deletion_command + ' -w ' + args.ward
+        if(args.title is not None):
+            deletion_command = deletion_command + ' -i \\"' + args.title + '\\"'
+        if(args.status_file is not None):
+            deletion_command = deletion_command + ' -S ' + args.status_file
+        if(args.thumbnail is not None):
+            deletion_command = deletion_command + ' -n ' + args.thumbnail
+        if(args.host_name is not None):
+            deletion_command = deletion_command + ' -o ' + args.host_name
+        if(args.user_name is not None):
+            deletion_command = deletion_command + ' -u ' + args.user_name
+        if(args.home_dir is not None):
+            deletion_command = deletion_command + ' -H ' + args.home_dir
+        if(args.url_filename is not None):
+            deletion_command = deletion_command + ' -U ' + args.url_filename
+        if(args.html_filename is not None):
+            deletion_command = deletion_command + ' -L ' + args.html_filename
+        if(args.url_key is not None):
+            deletion_command = deletion_command + ' -k ' + args.url_key
+        if(args.start_time is not None):
+            deletion_command = deletion_command + ' -s ' + args.start_time
+        if(args.run_time is not None):
+            deletion_command = deletion_command + ' -t ' + args.run_time
+        if(args.delete_control is not None):
+            deletion_command = deletion_command + ' -D ' + args.delete_control
+        deletion_command = deletion_command + ' -C \\"' + current_id + '\\"'
+        if(email_send):
+            deletion_command = deletion_command + ' --email-send '
+        if(args.email_from is not None and type(args.email_from) is not list):
+            deletion_command = deletion_command + ' -e ' + args.email_from
+        if(args.email_to is not None and type(args.email_to) is not list):
+            deletion_command = deletion_command + ' -E ' + args.email_to
+        if(args.dkim_private_key is not None):
+            deletion_command = deletion_command + ' -M ' + args.dkim_private_key
+        if(args.dkim_selector is not None):
+            deletion_command = deletion_command + ' -m ' + args.dkim_selector
+        if(args.num_from is not None):
+            deletion_command = deletion_command + ' -F ' + args.num_from
+        if(args.num_to is not None and type(args.num_to) is not list):
+            deletion_command = deletion_command + ' -T ' + args.num_to
+        if(args.verbose is not None):
+            if(args.verbose):
+                deletion_command = deletion_command + ' -v'
+        # create next weeks broadcast if recurring
+        # don't create a new broadcast if forcibly killing process
+        if(recurring):
+            deletion_command = deletion_command + ' -I'
+
+        if(args.verbose) : print(deletion_command)
+        ps = subprocess.Popen(split(deletion_command), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        subprocess.run(["at", run_deletion_time.strftime("%H:%M %Y-%m-%d")], stdin=ps.stdout)
+        ps.wait()
+    except:
+        if(args.verbose): print(traceback.format_exc())
+        print("Failure setting up delete event")
+        if(args.num_from is not None and args.num_to is not None):
+            sms.send_sms(args.num_from, args.num_to, args.ward + " had a failure setting up the delete event!", args.verbose)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Insert Live Broadcast in YouTube Live list.')
@@ -159,8 +225,7 @@ if __name__ == '__main__':
                 send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
         if(googleDoc is not None):
             sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
-            sheet.update_cell(insert_row,column, "Total Views")
-            sheet.update_cell(insert_row,column+1, numViewers)
+            sheet.update_cell(insert_row,column, "Total Views = " + numViewers)
 
     try:
         # delete the recording we just finished

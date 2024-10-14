@@ -37,6 +37,7 @@ import count_viewers # count_viewers.py local file
 import presets # presets.py local file
 import local_stream as ls # local_stream.py local file
 import global_file as gf # local file for sharing globals between files
+import delete_event # local file for deleting broadcast
 
 import gspread # pip3 install gspread==2.0.0
 
@@ -335,6 +336,9 @@ if __name__ == '__main__':
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " testing is active!", verbose)
 
+    viewers_file = ward.lower() + '_viewers.csv'
+    graph_file = ward.lower() + '_viewers.png'
+
     start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, ward, num_from, num_to, verbose)
 
     update_start_stop = False
@@ -409,14 +413,16 @@ if __name__ == '__main__':
     exception = None
     for retry_num in range(NUM_RETRIES):
         exception = None
+        tb = None
         try:
             youtube = google_auth.get_authenticated_service(credentials_file, args)
         except Exception as exc:
             exception = ecx
+            tb = traceback.format_exc()
             if(verbose): print('!!YouTube Authentication Failure!!')
             gf.sleep(0.5, 2)
     if(exception):
-        print(traceback.format_exc())
+        print(tb)
         print("YouTube authentication failure.")
         if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward YouTube authentication failure!", verbose)
         # we can't continue if not authenticated to YouTube so exit out
@@ -459,9 +465,9 @@ if __name__ == '__main__':
 
     process = None
     streaming = False
-    count_viewers = threading.Thread(target = count_viewers.count_viewers, args = (ward.lower() + '_viewers.csv', youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file))
-    count_viewers.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
-    count_viewers.start()
+    count_viewers_thrd = threading.Thread(target = count_viewers.count_viewers, args = (viewers_file, graph_file, youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file))
+    count_viewers_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
+    count_viewers_thrd.start()
     print("Starting stream...")
     verify_broadcast = threading.Thread(target = verify_live_broadcast, args = (youtube, ward, args, current_id, args.html_filename, args.url_filename, num_from, num_to, verbose))
     verify_broadcast.daemon = True
@@ -769,72 +775,17 @@ if __name__ == '__main__':
     if(not testing and email_send):
         print("e-mail concurrent viewer file")
         if(args.email_from is not None and args.email_to is not None):
-            send_email.send_viewer_file(ward.lower() + '_viewers.csv', args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+            count_viewers.write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
+            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
 
     if(googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
-        sheet.update_cell(insert_row,column, "Views")
-        sheet.update_cell(insert_row,column+1, numViewers)
+        sheet.update_cell(insert_row,column, "Views = " + str(numViewers))
 
     # schedule video deletion task
     # don't setup deletion if forcibly killing process
     if(not gf.killer.kill_now):
-        deletion_command = 'echo ' + os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
-        if(args.config_file is not None):
-            deletion_command = deletion_command + ' -c ' + args.config_file
-        if(args.ward is not None):
-            deletion_command = deletion_command + ' -w ' + args.ward
-        if(args.title is not None):
-            deletion_command = deletion_command + ' -i \\"' + args.title + '\\"'
-        if(args.status_file is not None):
-            deletion_command = deletion_command + ' -S ' + args.status_file
-        if(args.thumbnail is not None):
-            deletion_command = deletion_command + ' -n ' + args.thumbnail
-        if(args.host_name is not None):
-            deletion_command = deletion_command + ' -o ' + args.host_name
-        if(args.user_name is not None):
-            deletion_command = deletion_command + ' -u ' + args.user_name
-        if(args.home_dir is not None):
-            deletion_command = deletion_command + ' -H ' + args.home_dir
-        if(args.url_filename is not None):
-            deletion_command = deletion_command + ' -U ' + args.url_filename
-        if(args.html_filename is not None):
-            deletion_command = deletion_command + ' -L ' + args.html_filename
-        if(args.url_key is not None):
-            deletion_command = deletion_command + ' -k ' + args.url_key
-        if(args.start_time is not None):
-            deletion_command = deletion_command + ' -s ' + args.start_time
-        if(args.run_time is not None):
-            deletion_command = deletion_command + ' -t ' + args.run_time
-        if(args.delete_control is not None):
-            deletion_command = deletion_command + ' -D ' + args.delete_control
-        deletion_command = deletion_command + ' -C \\"' + current_id + '\\"'
-        if(email_send):
-            deletion_command = deletion_command + ' --email-send '
-        if(args.email_from is not None and type(args.email_from) is not list):
-            deletion_command = deletion_command + ' -e ' + args.email_from
-        if(args.email_to is not None and type(args.email_to) is not list):
-            deletion_command = deletion_command + ' -E ' + args.email_to
-        if(args.dkim_private_key is not None):
-            deletion_command = deletion_command + ' -M ' + args.dkim_private_key
-        if(args.dkim_selector is not None):
-            deletion_command = deletion_command + ' -m ' + args.dkim_selector
-        if(args.num_from is not None):
-            deletion_command = deletion_command + ' -F ' + args.num_from
-        if(args.num_to is not None and type(args.num_to) is not list):
-            deletion_command = deletion_command + ' -T ' + args.num_to
-        if(args.verbose is not None):
-            if(args.verbose):
-                deletion_command = deletion_command + ' -v'
-        # create next weeks broadcast if recurring
-        # don't create a new broadcast if forcibly killing process
-        if(recurring):
-            deletion_command = deletion_command + ' -I'
-
-        if(verbose) : print(deletion_command)
-        ps = subprocess.Popen(split(deletion_command), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        subprocess.run(["at", run_deletion_time.strftime("%H:%M %Y-%m-%d")], stdin=ps.stdout)
-        ps.wait()
+        delete_event.setup_event_deletion(current_id, email_send, recurring, run_deletion_time, args)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     try:

@@ -174,6 +174,7 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
         exception = None
         for retry_num in range(NUM_RETRIES):
             exception = None
+            tb = None
             try:
                 list_broadcasts = youtube.liveBroadcasts().list(
                     part='id,status',
@@ -186,12 +187,13 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
                 break
             except Exception as exc:
                 exception = exc
+                tb = traceback.format_exc()
                 if(verbose): print('!!Get Broadcasts Retry!!')
                 gf.sleep(1,3)
                 
         if exception:
-            if(verbose): print(traceback.format_exc())
-            gf.log_exception(traceback.format_exc(), "failed to get list of broadcasts")
+            if(verbose): print(tb)
+            gf.log_exception(tb, "failed to get list of broadcasts")
             print("Failed to get list of broadcasts")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed to get list of broadcasts!", verbose)
@@ -211,6 +213,7 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None,
     exception = None
     for retry_num in range(NUM_RETRIES):
         exception = None
+        tb = None
         try:
             broadcast = youtube.liveBroadcasts().list(
                 part='status',
@@ -220,12 +223,13 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None,
             return(broadcast['items'][0]['status']['lifeCycleStatus'])
         except Exception as exc:
             exception = exc
+            tb = traceback.format_exc()
             if(verbose): print('!!Broadcast Status Retry!!')
             gf.sleep(1, 3)
 
     if exception:
-        if(verbose): print(traceback.format_exc())
-        gf.log_exception(traceback.format_exc(), "failed to get broadcast status")
+        if(verbose): print(tb)
+        gf.log_exception(tb, "failed to get broadcast status")
         print("Failed to get broadcast status")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get broadcast status!", verbose)
@@ -235,6 +239,7 @@ def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None,
     exception = None
     for retry_num in range(NUM_RETRIES):
         exception = None
+        tb = None
         try:
             stream = youtube.liveStreams().list(
                 part='status',
@@ -245,12 +250,13 @@ def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None,
             return(healthStatus, description)
         except Exception as exc:
             exception = exc
+            tb = traceback.format_exc()
             if(verbose): print('!!Broadcast Health Retry!!')
             gf.sleep(1, 3)
 
     if exception:
-        if(verbose): print(traceback.format_exc())
-        gf.log_exception(traceback.format_exc(), "failed to get broadcast health")
+        if(verbose): print(tb)
+        gf.log_exception(tb, "failed to get broadcast health")
         print("Failed to get broadcast health")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get broadcast health!", verbose)
@@ -327,9 +333,9 @@ def bind_broadcast(youtube, videoID, streamID, ward, num_from = None, num_to = N
 
 # AutoStop is being disabled so that if the stream has problems (like the internet drops for a minute) YouTube won't automatically close out the video. This does mean that we have to manualy close it out when we're done with the broadcast/
 def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
-    exception = None
     for retry_num in range(NUM_RETRIES):
         exception = None
+        tb = None
         try:
             stopBroadcast = youtube.liveBroadcasts().transition(
                 broadcastStatus='complete',
@@ -339,21 +345,22 @@ def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbo
             break
         except Exception as exc:
             exception = exc
+            tb = traceback.format_exc()
             if(verbose): print('!!Stop Broadcast Retry!!')
             gf.sleep(1, 3)
 
     if exception:
-        if(verbose): print(traceback.format_exc())
+        if(verbose): print(tb)
         print("Failed to stop Broadcast")
-        gf.log_exception(traceback.format_exc(), "failed to stop broadcast")
+        gf.log_exception(tb, "failed to stop broadcast")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to stop broadcast!", verbose)
 
 # Gets the current number of viewers of the video specified by videoID, so those numbers can be reported out
 def get_view_count(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
-    exception = None
     for retry_num in range(NUM_RETRIES):
         exception = None
+        tb = None
         try:
             videoDetails = youtube.videos().list(
                 part='statistics',
@@ -366,12 +373,13 @@ def get_view_count(youtube, videoID, ward, num_from = None, num_to = None, verbo
             break
         except Exception as exc:
             exception = exc
+            tb = traceback.format_exc()
             if(verbose): print('!!Concurrent Viewers Retry!!')
             gf.sleep(1, 3)
     if exception:
         totalViews = -1
-        if(verbose): print(traceback.format_exc())
-        gf.log_exception(traceback.format_exc(), "failed to get concurrent viewers")
+        if(verbose): print(tb)
+        gf.log_exception(tb, "failed to get concurrent viewers")
         print("Failed to get concurrent viewers")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!", verbose)
@@ -380,9 +388,9 @@ def get_view_count(youtube, videoID, ward, num_from = None, num_to = None, verbo
 
 # Gets the current number of viewers of the video specified by videoID, so those numbers can be reported out
 def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
-    exception = None
     for retry_num in range(NUM_RETRIES):
         exception = None
+        tb = None
         try:
             liveDetails = youtube.videos().list(
                 part='liveStreamingDetails',
@@ -395,12 +403,13 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
             break
         except Exception as exc:
             exception = exc
+            tb = traceback.format_exc()
             if(verbose): print('!!Concurrent Viewers Retry!!')
             gf.sleep(1, 3)
     if exception:
         currentViewers = -1
-        if(verbose): print(traceback.format_exc())
-        gf.log_exception(traceback.format_exc(), "failed to get concurrent viewers")
+        if(verbose): print(tb)
+        gf.log_exception(tb, "failed to get concurrent viewers")
         print("Failed to get concurrent viewers")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get concurrent viewers!", verbose)
@@ -420,9 +429,13 @@ def get_sheet_row_and_column(googleDoc, videoID, ward, num_from = None, num_to =
     except gspread.exceptions.CellNotFound:
         column = None
     if(column is None):
-        column = sheet.col_count + 1
-        sheet.add_cols(2)
+        if(sheet.col_count == 1 and sheet.cell(1, 1).value == ""):
+            column = 1
+        else:
+            column = sheet.col_count + 1
+            sheet.add_cols(1)
         sheet.update_cell(1,column, videoID)
+        sheet.update_cell(2,column, dt.datetime.now().strftime("%m/%d/%Y %H:%M:%S"))
     else:
         column = column.col
 
@@ -436,7 +449,7 @@ if __name__ == '__main__':
     parser.add_argument('-i','--title',type=str,default='Live Stream',help='Broadcast Title')
     parser.add_argument('-n','--thumbnail',type=str,default='thumbnail.jpg',help='Path and filename for the JPG image that will be the video thumbnail')
     parser.add_argument('-t','--run-time',type=str,default='1:10:00',help='Broadcast runtime in HH:MM:SS')
-    parser.add_argument('-I','--video-id',type=str,help='YouTube Video ID')
+    parser.add_argument('-C','--current-id',type=str,help='YouTube Video ID for the current broadcast')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
