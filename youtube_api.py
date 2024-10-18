@@ -367,7 +367,7 @@ def get_view_count(youtube, videoID, ward, num_from = None, num_to = None, verbo
                 id=videoID
             ).execute()
             if('viewCount' in videoDetails['items'][0]['statistics']):
-                totalViews = videoDetails['items'][0]['statistics']['viewCount']
+                totalViews = int(videoDetails['items'][0]['statistics']['viewCount'])
             else:
                 totalViews = 0
             break

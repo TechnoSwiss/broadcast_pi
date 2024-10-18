@@ -44,19 +44,19 @@ def ordinal(n):
         suffix = 'th'
     return str(n) + suffix
 
-def send_total_views(email_from, email_to, ward, total_views, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
-    sender_domain = email_from.split('@')[-1]
-    # added a JSON configuration file that allows creating this as a list
-    # so need to be able to turn it into a comma seperated string
-    if(type(email_to) == list):
-        email_to = ",".join(email_to)
-    msg = MIMEText("There were " + total_views + " total view(s) reported by YouTube.", 'plain')
-    msg["From"] = email_from
-    msg["To"] = email_to
-    msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast final view(s) count - " + ward.replace("_", " ")
-    msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
-
+def send_total_views(email_from, email_to, ward, total_views, total_previous_views = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
     try:
+        sender_domain = email_from.split('@')[-1]
+        # added a JSON configuration file that allows creating this as a list
+        # so need to be able to turn it into a comma seperated string
+        if(type(email_to) == list):
+            email_to = ",".join(email_to)
+        msg = MIMEText("There were " + str(total_views) + " total view(s) reported by YouTube." + (" An additional " + str(total_views - total_previous_views) + " view(s) since the live broadcast.") if total_previous_views is not None else "", 'plain')
+        msg["From"] = email_from
+        msg["To"] = email_to
+        msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast final view(s) count - " + ward.replace("_", " ")
+        msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
+
         if(dkim_private_key and dkim_selector):
             with open(dkim_private_key) as fh:
                 dkim_private_key = fh.read()
@@ -80,30 +80,30 @@ def send_total_views(email_from, email_to, ward, total_views, dkim_private_key =
             server.sendmail(email_from, email_to.split(','),msg.as_string())
     except:
         if(verbose): print(traceback.format_exc())
-        print("Failed to send CSV file email")
+        print("Failed to send final viewers email")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to send current viewers!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed to send final viewers!", verbose)
 
 def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
-    sender_domain = email_from.split('@')[-1]
-    # added a JSON configuration file that allows creating this as a list
-    # so need to be able to turn it into a comma seperated string
-    if(type(email_to) == list):
-        email_to = ",".join(email_to)
-    msg = MIMEMultipart()
-    msg["From"] = email_from
-    msg["To"] = email_to
-    msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast - " + ward.replace("_", " ")
-    msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
-
-    # Encapsulate the plain and HTML versions of the message body in an
-    # 'alternative' part, so message agents can decide which they want to display.
-    #msgAlternative = MIMEMultipart('alternative')
-    #msgRoot.attach(msgAlternative)
-
-    msg.attach(MIMEText("There were " + total_views + " view(s) reported by YouTube.\nFor breakdown of concurrent viewers during broadcast,\nplease open the attached file in a spreadsheet app. (Excel/Google Docs).", 'plain'))
-
     try:
+        sender_domain = email_from.split('@')[-1]
+        # added a JSON configuration file that allows creating this as a list
+        # so need to be able to turn it into a comma seperated string
+        if(type(email_to) == list):
+            email_to = ",".join(email_to)
+        msg = MIMEMultipart()
+        msg["From"] = email_from
+        msg["To"] = email_to
+        msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast - " + ward.replace("_", " ")
+        msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
+
+        # Encapsulate the plain and HTML versions of the message body in an
+        # 'alternative' part, so message agents can decide which they want to display.
+        #msgAlternative = MIMEMultipart('alternative')
+        #msgRoot.attach(msgAlternative)
+
+        msg.attach(MIMEText("There were " + str(total_views) + " view(s) reported by YouTube.\nFor breakdown of concurrent viewers during broadcast,\nplease open the attached file in a spreadsheet app. (Excel/Google Docs).", 'plain'))
+
         with open(csv_file) as fp:
             attachment = MIMEText(fp.read(), _subtype='csv')
 

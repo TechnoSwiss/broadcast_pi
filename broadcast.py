@@ -557,7 +557,7 @@ if __name__ == '__main__':
                         current_id = gf.current_id
                     status, status_description = yt.get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
                     broadcast_status_check = datetime.now()
-                    if(verbose): print(status)
+                    if(verbose): print("Status : " + status)
                     if(verbose): print(status_description)
                     if(status == 'bad' and (datetime.now() - broadcast_status_length) > timedelta(minutes=broadcast_downgrade_delay[broadcast_index])):
                         broadcast_index += 1
@@ -785,7 +785,7 @@ if __name__ == '__main__':
     # schedule video deletion task
     # don't setup deletion if forcibly killing process
     if(not gf.killer.kill_now):
-        delete_event.setup_event_deletion(current_id, email_send, recurring, run_deletion_time, args)
+        delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     try:

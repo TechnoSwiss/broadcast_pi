@@ -20,7 +20,7 @@ import global_file as gf # local file for sharing globals between files
 
 import gspread # pip3 install gspread==2.0.0
 
-def setup_event_deletion(current_id, email_send, recurring, run_deletion_time, args):
+def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_deletion_time, args):
     try:
         deletion_command = 'echo ' + os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
         if(args.config_file is not None):
@@ -52,6 +52,7 @@ def setup_event_deletion(current_id, email_send, recurring, run_deletion_time, a
         if(args.delete_control is not None):
             deletion_command = deletion_command + ' -D ' + args.delete_control
         deletion_command = deletion_command + ' -C \\"' + current_id + '\\"'
+        deletion_command = deletion_command + ' --num-viewers ' + str(num_viewers)
         if(email_send):
             deletion_command = deletion_command + ' --email-send '
         if(args.email_from is not None and type(args.email_from) is not list):
@@ -101,6 +102,7 @@ if __name__ == '__main__':
     parser.add_argument('-t','--run-time',type=str,default='1:10:00',help='Broadcast run time in HH:MM:SS')
     parser.add_argument('-D','--delete-control',type=int,help='Control delete options from command line, bit mapped. delete_current 1 : delete_ready 2 : delete_complete 4')
     parser.add_argument('-C','--current-id',type=str,help='ID value for the current broadcast, used if deleting current broadcast is true')
+    parser.add_argument('--num-viewers',type=int,help='Number of viewers recorded previously, used to calculate number of new viewers since broadcast was live')
     parser.add_argument('-I','--insert-next-broadcast',default=False, action='store_true',help='Insert next broadcast, this should only be used if calling from broadcast.py')
     parser.add_argument('--email-send',default=False, action='store_true',help='Should email be sent when deleting video(s)')
     parser.add_argument('-e','--email-from',type=str,help='Account to send email with/from')
@@ -137,6 +139,8 @@ if __name__ == '__main__':
             delete_complete = False
 
     testing = True if os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/testing') else False
+
+    #os.chdir(os.path.abspath(os.path.dirname(__file__)))
 
     if(args.config_file is not None):
         if("/" in args.config_file):
@@ -211,21 +215,28 @@ if __name__ == '__main__':
 
     credentials_file = ward.lower() + '.auth'
 
+
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)
 
-    # if current_id isn't defined, we can't delete that video
-    if(current_id is None):
-        delete_current = False
-    else:
-        numViewers = yt.get_view_count(youtube, current_id, ward, num_from, num_to, verbose)
-        if(not testing and email_send):
-            print("e-mail total views")
-            if(args.email_from is not None and args.email_to is not None):
-                send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
-        if(googleDoc is not None):
-            sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
-            sheet.update_cell(insert_row,column, "Total Views = " + numViewers)
+    try:
+        # if current_id isn't defined, we can't delete that video
+        if(current_id is None):
+            delete_current = False
+        else:
+            numViewers = yt.get_view_count(youtube, current_id, ward, num_from, num_to, verbose)
+            if(not testing and email_send):
+                if(verbose) : print("e-mail total views")
+                if(args.email_from is not None and args.email_to is not None):
+                    send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.num_viewers, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+            if(googleDoc is not None):
+                sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
+                sheet.update_cell(insert_row,column, "Total Views = " + str(numViewers))
+    except:
+        if(verbose) : print(traceback.format_exc())
+        print("Failed to send / update current broadcast records " + current_id)
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to send / update current broadcast records " + current_id + "!", verbose)
 
     try:
         # delete the recording we just finished
