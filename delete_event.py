@@ -207,7 +207,7 @@ if __name__ == '__main__':
         exit()
 
     if(testing):
-        #print("!!testing is active!!")
+        print("!!testing is active!!")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " testing is active!", verbose)
 
@@ -229,6 +229,8 @@ if __name__ == '__main__':
                 if(verbose) : print("e-mail total views")
                 if(args.email_from is not None and args.email_to is not None):
                     send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.num_viewers, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+                else:
+                    if(verbose): print("email_from or email_to argument is None")
             if(googleDoc is not None):
                 sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
                 sheet.update_cell(insert_row,column, "Total Views = " + str(numViewers))
