@@ -10,6 +10,7 @@ from datetime import datetime
 import time
 
 import smtplib
+import imaplib
 import dkim
 import ssl
 from email import encoders
@@ -79,6 +80,19 @@ def send_total_views(email_from, email_to, ward, total_views, total_previous_vie
         with smtplib.SMTP_SSL(email_auth[email_from]['server'], port, context=context) as server:
             server.login(email_from, email_auth[email_from]['password'])
             server.sendmail(email_from, email_to.split(','),msg.as_string())
+
+        try:
+            # save copy of message to mail server
+            imap = imaplib.IMAP4_SSL(email_auth[email_from]['server'], 993)
+            imap.login(email_from, email_auth[email_from]['password'])
+            imap.append('INBOX.Sent', '\\Seen', imaplib.Time2Internaldate(time.time()), msg.as_string().encode('UTF-8'))
+            imap.logout()
+        except:
+            if(verbose): print(traceback.format_exc())
+            print("Failed to save final viewers email to sent folder")
+            if(num_from is not None and num_to is not None):
+                sms.send_sms(num_from, num_to, ward + " failed to save final viewers to sent folder!", verbose)
+
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed to send final viewers email")
@@ -140,6 +154,19 @@ def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views
         with smtplib.SMTP_SSL(email_auth[email_from]['server'], port, context=context) as server:
             server.login(email_from, email_auth[email_from]['password'])
             server.sendmail(email_from, email_to.split(','),msg.as_string())
+
+        try:
+            # save copy of message to mail server
+            imap = imaplib.IMAP4_SSL(email_auth[email_from]['server'], 993)
+            imap.login(email_from, email_auth[email_from]['password'])
+            imap.append('INBOX.Sent', '\\Seen', imaplib.Time2Internaldate(time.time()), msg.as_string().encode('UTF-8'))
+            imap.logout()
+        except:
+            if(verbose): print(traceback.format_exc())
+            print("Failed to save CSV file email to sent folder")
+            if(num_from is not None and num_to is not None):
+                sms.send_sms(num_from, num_to, ward + " failed to save current viewers to sent folder!", verbose)
+
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed to send CSV file email")
@@ -203,4 +230,4 @@ if __name__ == '__main__':
         exit()
 
     send_viewer_file(args.viewers_file, args.image_file, args.email_from, args.email_to, ward, '0', args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
-    send_total_views(args.email_from, args.email_to, ward, '0', args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+    send_total_views(args.email_from, args.email_to, ward, 2, 0, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
