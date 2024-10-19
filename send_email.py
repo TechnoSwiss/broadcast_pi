@@ -87,7 +87,7 @@ def send_total_views(email_from, email_to, ward, total_views, total_previous_vie
 
 def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
     try:
-        if(verbose): print("creating viewers file email")
+        if(verbose): print("creating concurrent viewers file email")
         sender_domain = email_from.split('@')[-1]
         # added a JSON configuration file that allows creating this as a list
         # so need to be able to turn it into a comma seperated string
