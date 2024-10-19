@@ -51,7 +51,7 @@ def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_del
             deletion_command = deletion_command + ' -t ' + args.run_time
         if(args.delete_control is not None):
             deletion_command = deletion_command + ' -D ' + args.delete_control
-        deletion_command = deletion_command + ' -C \\"' + current_id + '\\"'
+        deletion_command = deletion_command + ' -C=\\"' + current_id + '\\"'
         deletion_command = deletion_command + ' --num-viewers ' + str(num_viewers)
         if(email_send):
             deletion_command = deletion_command + ' --email-send '
