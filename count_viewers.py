@@ -11,7 +11,7 @@ import pandas # pip3 install pandas
 import matplotlib.pyplot as plt # pip3 install matplotlib
 
 from matplotlib.dates import DateFormatter
-from matplotlib.ticker import MultipleLocator, AutoMinorLocator
+from matplotlib.ticker import MultipleLocator, AutoMinorLocator, MaxNLocator
 from datetime import datetime, timedelta
 from subprocess import check_output
 
@@ -40,20 +40,16 @@ class GracefulKiller:
 def write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose):
     try:
         with open(viewers_file, 'r') as inFile:
-            #dateparse = lambda x: datetime.strptime(x, '%d/%m/%Y %H:%M:%S')
             df = pandas.read_csv(viewers_file, delimiter=',', 
                     index_col=0,
                     parse_dates=[0],
                     infer_datetime_format=True,
-            #        date_parser=dateparse,
                     names=['time','concurent viewers'])
             if(not df.empty):
-                #plt.rcParams["figure.figsize"] = [16, 9]
                 fig, ax = plt.subplots()
                 ax.plot(df.index.to_pydatetime(), df)
-                #ax.figsize=(16,9)
                 ax.xaxis.set_major_formatter(DateFormatter("%-I:%M:%S %p"))
-                ax.yaxis.set_major_locator(MultipleLocator())
+                ax.yaxis.set_major_locator(MaxNLocator(nbins=40, steps=[1,2,5,10], integer=True, min_n_ticks=1))
                 ax.set_ylim(ymin=0)
                 ax.grid(axis='x', which='major', linestyle='--')
                 ax.grid(axis='y', which='major', linestyle='--')
@@ -79,27 +75,28 @@ def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None
 
     if(verbose): print("Monitoring viewers...")
     while not gf.killer.kill_now:
-      loop_time = datetime.now()
-      # check video id in global file to see if we need to update the video id that we're monitoring
-      if(gf.current_id and gf.current_id != videoID):
-          print("Live ID doesn't match Current ID, updating count")
-          print(videoID + " => " + gf.current_id)
-          videoID = gf.current_id
-      if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to, verbose) == "complete"):
-          break
-      if extended:
-          temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1].rstrip()
-          throttled = check_output(['vcgencmd', 'get_throttled']).decode('utf-8').split('=')[-1].rstrip()
-          status, description = yt.get_broadcast_health(youtube, videoID, ward, num_from, num_to, verbose)
-      numViewers = str(yt.get_concurrent_viewers(youtube, videoID, ward, num_from, num_to, verbose))
-      outputData = datetime.now().strftime("%m/%d/%Y %H:%M:%S,") + numViewers + ('\n' if not extended else ("," + temp + "," + throttled + "," + status + "," + description + '\n'))
-      outFile.write(outputData)
-      outFile.flush()
-      if(statusFile is not None):
-          statusFile.write(numViewers + '\n')
-          statusFile.flush()
-      if(googleDoc is not None):
-            for retry_num in range(NUM_RETRIES):
+      try:
+          loop_time = datetime.now()
+          # check video id in global file to see if we need to update the video id that we're monitoring
+          if(gf.current_id and gf.current_id != videoID):
+              print("Live ID doesn't match Current ID, updating count")
+              print(videoID + " => " + gf.current_id)
+              videoID = gf.current_id
+          if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to, verbose) == "complete"):
+              break
+          if extended:
+              temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1].rstrip()
+              throttled = check_output(['vcgencmd', 'get_throttled']).decode('utf-8').split('=')[-1].rstrip()
+              status, description = yt.get_broadcast_health(youtube, videoID, ward, num_from, num_to, verbose)
+          numViewers = str(yt.get_concurrent_viewers(youtube, videoID, ward, num_from, num_to, verbose))
+          outputData = datetime.now().strftime("%m/%d/%Y %H:%M:%S,") + numViewers + ('\n' if not extended else ("," + temp + "," + throttled + "," + status + "," + description + '\n'))
+          outFile.write(outputData)
+          outFile.flush()
+          if(statusFile is not None):
+              statusFile.write(numViewers + '\n')
+              statusFile.flush()
+          if(googleDoc is not None):
+              for retry_num in range(NUM_RETRIES):
                 exception = None
                 tb = None
                 try:
@@ -113,21 +110,30 @@ def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None
                     # token for writing to Google doc only lasts 60 min., then we have to call get_sheet_row_and_column again to renew it
                     sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, videoID, ward, num_from, num_to, verbose)
 
-            if exception:
+              if exception:
                 if(verbose): print(tb)
                 print("Failed to write Google Doc")
                 gf.log_exception(tb, "failed to write Google Doc")
                 if(num_from is not None and num_to is not None):
                     sms.send_sms(num_from, num_to, ward + " failed to write Google Doc!", verbose)
-      if(gf.killer.kill_now):
-        break
-      # time through this loop has some variance so the viewer numbers aren't always spaced 30 seconds appart
-      # calculate the time through the loop so we have a more accurate count
-      time.sleep(30 - (datetime.now() - loop_time).total_seconds())
+          if(gf.killer.kill_now):
+            break
+          # time through this loop has some variance so the viewer numbers aren't always spaced 30 seconds appart
+          # calculate the time through the loop so we have a more accurate count
+          time.sleep(30 - (datetime.now() - loop_time).total_seconds())
+      # we've been getting exception errors here, that kick us out of the loop and then stop recording viewer data
+      # trap the exception, record it, and continue with checking the data
+      except:
+        if(verbose): print(traceback.format_exc())
+        print("Error attempting to write viewers file")
+        gf.log_exception(tb, "failed to write viewers file")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to write current viewers!", verbose)
 
 def count_viewers(viewers_file, graph_file, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, status = None, append = False):
     try:
         with open(viewers_file, 'a' if append else 'w') as outFile:
+            # status file is used by the browser app to show number of current viewers
             if(status is not None):
                 with open(status, 'w') as statusFile:
                     write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, statusFile)
@@ -137,9 +143,9 @@ def count_viewers(viewers_file, graph_file, youtube, videoID, ward, num_from = N
             write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
     except:
         if(verbose): print(traceback.format_exc())
-        print("Error attempting to write viewers file")
+        print("Error attempting to count viewers")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to write current viewers!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed to count current viewers!", verbose)
 
 if __name__ == '__main__':
 
@@ -263,8 +269,9 @@ if __name__ == '__main__':
         print("Exiting Broadcast")
 
     numViewers = yt.get_view_count(youtube, current_id, ward, args.num_from, args.num_to, args.verbose)
-    if(not gf.killer.kill_now and args.email_from is not None and args.email_to is not None):
-        send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+    if(not gf.killer.kill_now and email_send):
+        if(args.email_from is not None and args.email_to is not None):
+            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
 
     if(googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, args.num_from, args.num_to, args.verbose)

@@ -31,7 +31,7 @@ def signal_handler(sig, frame):
   print('\n!!Exiting from Ctrl+C or SIGTERM!!')
   sys.exit(0)
 
-def set_preset(ward, cam_ip, preset_file, preset, num_from = None, num_to = None, verbose = False):
+def set_preset(ward, cam_ip, preset_file, preset, update_all = False, num_from = None, num_to = None, verbose = False):
 
     try:
         if(os.path.exists(preset_file)):
@@ -54,7 +54,9 @@ def set_preset(ward, cam_ip, preset_file, preset, num_from = None, num_to = None
         return
 
     for preset_name in presets:
-        if(presets[preset_name]['preset'] == preset):
+        if(gf.killer.kill_now):
+            return
+        if(presets[preset_name]['preset'] == preset or update_all):
             print(preset_name)
             try:
                 ptz_cam.pantilt(24, 24, presets[preset_name]['pan'], presets[preset_name]['tilt'])
@@ -66,34 +68,57 @@ def set_preset(ward, cam_ip, preset_file, preset, num_from = None, num_to = None
                 if(num_from is not None and num_to is not None):
                     sms.send_sms(num_from, num_to, ward + " had a failure setting camera PTZ position in set method!", verbose)
 
-    last_pan = None
-    last_tilt = None
-    last_zoom = None
-    coordinate_found = None
-    while(coordinate_found is None and not gf.killer.kill_now):
-        try:
-            pan, tilt = ptz_cam.get_pantilt_position()
-            zoom = ptz_cam.get_zoom_position()
+            last_pan = None
+            last_tilt = None
+            last_zoom = None
+            coordinate_found = None
+            while(coordinate_found is None and not gf.killer.kill_now):
+                try:
+                    pan, tilt = ptz_cam.get_pantilt_position()
+                    zoom = ptz_cam.get_zoom_position()
 
-            if(pan != last_pan or tilt != last_tilt or zoom != last_zoom):
-                print("Camera Moving")
+                    if(pan != last_pan or tilt != last_tilt or zoom != last_zoom):
+                        print("Camera Moving")
 
-            else:
-                #need to put stuff here to report or save PTZ
-                coordinate_found = True
+                    else:
+                        #need to put stuff here to report or save PTZ
+                        coordinate_found = True
 
-            last_pan = pan
-            last_tilt = tilt
-            last_zoom = zoom
+                    last_pan = pan
+                    last_tilt = tilt
+                    last_zoom = zoom
 
-            time.sleep(1)
-        except:
-            if(verbose): print(traceback.format_exc())
-            gf.log_exception(traceback.format_exc(), "failure getting camera PTZ")
-            print("Failure getting camera PTZ position")
-            if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position in set method!", verbose)
-            time.sleep(10)
+                    gf.consecutive_ptz_status_failures = 0
+
+                    time.sleep(1)
+                except:
+                    if(verbose): print(traceback.format_exc())
+                    gf.log_exception(traceback.format_exc(), "failure getting camera PTZ")
+                    print("Failure getting camera PTZ position")
+                    gf.consecutive_ptz_status_failures += 1
+                    # camera PTZ position failures are not a huge isssue
+                    # the random wait on retry didn't seem to fix the issue
+                    # so to prevent constant text messages only send message
+                    # after several consecutive failures
+                    if(gf.consecutive_ptz_status_failures >= gf.pts_status_retries):
+                        # if we've reached this state it's likely the next request
+                        # will also fail, so zero the counter to prevent double
+                        # messages
+                        gf.consecutive_ptz_status_failures = 0
+                        if(gf.ptz_sms_sent <= gf.ptz_sms_max):
+                            gf.ptz_sms_sent += 1
+                            # Have yet to see this failure notification be anything more
+                            # than just camera unresponsiveness or network packets
+                            # getting dropped, all this SMS notification does is fill 
+                            # up the notification system and make it harder to see 
+                            # real problems
+                            if(num_from is not None and num_to is not None):
+                                sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position in set method!", verbose)
+                    time.sleep(10)
+            if(gf.killer.kill_now):
+                return
+            print('Saving - Name : {} - Preset : {}'.format(preset_name, presets[preset_name]['preset']))
+            ptz_cam.save_preset(presets[preset_name]['preset'])
 
 def record_presets(ward, cam_ip, preset_file, num_from = None, num_to = None, verbose = False):
 
@@ -151,7 +176,11 @@ def record_presets(ward, cam_ip, preset_file, num_from = None, num_to = None, ve
             except:
                 if(verbose): print(traceback.format_exc())
                 print("Failure getting preset coordinates")
+        if(gf.killer.kill_now):
+            return
 
+    if(gf.killer.kill_now):
+        return
     try:
         if(os.path.exists(preset_file)):
             with open(preset_file, "w") as presetFile:
@@ -266,8 +295,8 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
                     # getting dropped, all this SMS notification does is fill 
                     # up the notification system and make it harder to see 
                     # real problems
-                    #if(num_from is not None and num_to is not None):
-                    #    sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
             time.sleep(1)
 
     ptz_cam.close_connection()
@@ -279,6 +308,7 @@ if __name__ == '__main__':
     parser.add_argument('-p','--pc-name',type=str,help='System name that script is running on.')
     parser.add_argument('--preset-file',type=str,help='JSON file where camera presets are stored.')
     parser.add_argument('--record-presets',default=False,action='store_true',help='Updates preset positions in preset-file')
+    parser.add_argument('--set-presets',default=False,action='store_true',help='Updates preset positions from preset-file to camera')
     parser.add_argument('--set-preset',type=int,help='Set camera preset to value from preset-file')
     parser.add_argument('-R','--rtsp-stream',type=str,help='Use to specify an RTSP stream on the network to use instead of USB camera')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
@@ -317,8 +347,12 @@ if __name__ == '__main__':
         record_presets(args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.num_from, args.num_to, args.verbose)
         exit()
 
+    if(args.set_presets):
+        set_preset(args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.set_preset, args.set_presets, args.num_from, args.num_to, args.verbose)
+        exit()
+
     if(args.set_preset is not None):
-        set_preset(args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.set_preset, args.num_from, args.num_to, args.verbose)
+        set_preset(args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.set_preset, False, args.num_from, args.num_to, args.verbose)
         exit()
 
     if(camera_ip is not None and (args.ward is not None or args.pc_name is not None) and args.preset_file is not None and preset_status_file is not None):
