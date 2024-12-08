@@ -6,7 +6,10 @@ from datetime import datetime
 
 killer = None
 
-consecutive_ptz_status_failures = 0
+GD_VIEWS_ROW = 3
+GD_TOTAL_ROW = 4
+
+ptz_last_status = None
 pts_status_retries = 3
 ptz_sms_sent = 0
 ptz_sms_max = 5

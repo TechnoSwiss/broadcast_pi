@@ -45,7 +45,7 @@ def ordinal(n):
         suffix = 'th'
     return str(n) + suffix
 
-def send_total_views(email_from, email_to, ward, total_views, total_previous_views = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
+def send_total_views(email_from, email_to, ward, total_views, total_previous_views = None, broadcast_time = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
     try:
         if(verbose): print("creating total viewers email")
         sender_domain = email_from.split('@')[-1]
@@ -56,7 +56,9 @@ def send_total_views(email_from, email_to, ward, total_views, total_previous_vie
         msg = MIMEText("There were " + str(total_views) + " total view(s) reported by YouTube." + (" An additional " + str(total_views - total_previous_views) + " view(s) since the live broadcast.") if total_previous_views is not None else "", 'plain')
         msg["From"] = email_from
         msg["To"] = email_to
-        msg["Subject"] = datetime.now().strftime("%A %b. ") + ordinal(datetime.now().strftime("%-d")) + " Broadcast final view(s) count - " + ward.replace("_", " ")
+        if(broadcast_time is None) :
+            broadcast_time = datetime.now()
+        msg["Subject"] = broadcast_time.strftime("%A %b. ") + ordinal(broadcast_time.strftime("%-d")) + " Broadcast final view(s) count - " + ward.replace("_", " ")
         msg["Message-ID"] = "<" + str(time.time()) + "-" + email_from + ">"
 
         if(dkim_private_key and dkim_selector):
@@ -230,4 +232,4 @@ if __name__ == '__main__':
         exit()
 
     send_viewer_file(args.viewers_file, args.image_file, args.email_from, args.email_to, ward, '0', args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
-    send_total_views(args.email_from, args.email_to, ward, 2, 0, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+    send_total_views(args.email_from, args.email_to, ward, 2, 0, None, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)

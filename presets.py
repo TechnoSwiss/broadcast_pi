@@ -16,6 +16,7 @@ import sms # sms.py local file
 import global_file as gf
 
 NUM_RETRIES = 5
+PTZ_STATUS_UPDATE_TIMEOUT_SMS = 60 # number of seconds PTZ status has to go without an update before an SMS message is sent
 
 class GracefulKiller:
   kill_now = False
@@ -229,7 +230,9 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " had a failure connecting to the VISCA port on the camera!", verbose)
         return
-    
+
+    gf.ptz_last_status = time.monotonic() # setting this at the start so we have a valid starting point (in case the first status report returns an error)
+
     while(not gf.killer.kill_now):
         try:
             pan, tilt = ptz_cam.get_pantilt_position()
@@ -272,31 +275,22 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
             last_tilt = tilt
             last_zoom = zoom
 
-            gf.consecutive_ptz_status_failures = 0
+            gf.ptz_last_status = time.monotonic()
 
             time.sleep(1)
         except:
             if(verbose): print(traceback.format_exc())
             print("Failure getting camera PTZ position")
-            gf.consecutive_ptz_status_failures += 1
-            # camera PTZ position failures are not a huge isssue
-            # the random wait on retry didn't seem to fix the issue
-            # so to prevent constant text messages only send message
-            # after several consecutive failures
-            if(gf.consecutive_ptz_status_failures >= gf.pts_status_retries):
-                # if we've reached this state it's likely the next request
-                # will also fail, so zero the counter to prevent double
-                # messages
-                gf.consecutive_ptz_status_failures = 0
-                if(gf.ptz_sms_sent <= gf.ptz_sms_max):
-                    gf.ptz_sms_sent += 1
-                    # Have yet to see this failure notification be anything more
-                    # than just camera unresponsiveness or network packets
-                    # getting dropped, all this SMS notification does is fill 
-                    # up the notification system and make it harder to see 
-                    # real problems
-                    if(num_from is not None and num_to is not None):
-                        sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
+            # camera status seems to get a lot of failures even with it having built-in retries
+            # the status however isn't very important, but we would like to get notified if there's
+            # a constant issue, however typically what happens is it sends out a few text messages
+            # but everything self corrects. Ideally we only get an SMS if there's a real issue that's
+            # not resolving itself. Updating this so that it only sends out an SMS if updates continue
+            # to fail over a given period of time (ie only message is status isn't updated for more then 1 min)
+            if(gf.ptz_last_status is not None and (time.monotonic() - gf.ptz_last_status) > PTZ_STATUS_UPDATE_TIMEOUT_SMS):
+                gf.ptz_last_status = time.monotonic() # reset timeout so that we don't get contant message if the next status update fails
+                if(num_from is not None and num_to is not None):
+                    sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
             time.sleep(1)
 
     ptz_cam.close_connection()

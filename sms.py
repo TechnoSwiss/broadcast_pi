@@ -63,7 +63,9 @@ def send_sms(num_from, num_to, sms_message, verbose = False, bypass_limit = Fals
                 print("!!Rate limit hit on SMS!!")
                 print(sms_message)
     except:
-        if(verbose): print(traceback.format_exc())
+        tb = traceback.format_exc()
+        if(verbose): print(tb)
+        gf.log_exception(tb, "SMS send failure")
         print("SMS Send Failure")
 
 if __name__ == '__main__':

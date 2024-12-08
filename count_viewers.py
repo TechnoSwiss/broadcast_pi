@@ -69,14 +69,14 @@ def write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to write viewer image!", verbose)
 
-def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, statusFile = None, googleDoc = 'Broadcast Viewers'):
+def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, statusFile = None, googleDoc = None):
     if(googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, videoID, ward, num_from, num_to, verbose)
 
     if(verbose): print("Monitoring viewers...")
+    start_time = time.monotonic()
     while not gf.killer.kill_now:
       try:
-          loop_time = datetime.now()
           # check video id in global file to see if we need to update the video id that we're monitoring
           if(gf.current_id and gf.current_id != videoID):
               print("Live ID doesn't match Current ID, updating count")
@@ -118,32 +118,33 @@ def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None
                     sms.send_sms(num_from, num_to, ward + " failed to write Google Doc!", verbose)
           if(gf.killer.kill_now):
             break
-          # time through this loop has some variance so the viewer numbers aren't always spaced 30 seconds appart
-          # calculate the time through the loop so we have a more accurate count
-          time.sleep(30 - (datetime.now() - loop_time).total_seconds())
+          time.sleep(30.0 - ((time.monotonic() - start_time) % 30.0))
       # we've been getting exception errors here, that kick us out of the loop and then stop recording viewer data
       # trap the exception, record it, and continue with checking the data
       except:
-        if(verbose): print(traceback.format_exc())
+        tb = traceback.format_exc()
+        if(verbose): print(tb)
         print("Error attempting to write viewers file")
         gf.log_exception(tb, "failed to write viewers file")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to write current viewers!", verbose)
 
-def count_viewers(viewers_file, graph_file, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, status = None, append = False):
+def count_viewers(viewers_file, graph_file, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, status = None, append = False, googleDoc = None):
     try:
         with open(viewers_file, 'a' if append else 'w') as outFile:
             # status file is used by the browser app to show number of current viewers
             if(status is not None):
                 with open(status, 'w') as statusFile:
-                    write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, statusFile)
+                    write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, statusFile, googleDoc)
             else:
-                write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended)
+                write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, googleDoc)
         if(not gf.killer.kill_now):
             write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
     except:
-        if(verbose): print(traceback.format_exc())
+        tb = traceback.format_exc()
+        if(verbose): print(tb)
         print("Error attempting to count viewers")
+        gf.log_exception(tb, "failed to count current viewers")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to count current viewers!", verbose)
 
@@ -259,7 +260,7 @@ if __name__ == '__main__':
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, args)
 
-    count = threading.Thread(target = count_viewers, args = (viewers_file, graph_file, youtube, current_id, ward, args.num_from, args.num_to, args.verbose, args.extended, None, args.append))
+    count = threading.Thread(target = count_viewers, args = (viewers_file, graph_file, youtube, current_id, ward, args.num_from, args.num_to, args.verbose, args.extended, None, args.append, googleDoc))
     count.start()
     count.join()
 
@@ -275,7 +276,7 @@ if __name__ == '__main__':
 
     if(googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, args.num_from, args.num_to, args.verbose)
-        sheet.update_cell(insert_row,column, "Views = " + str(numViewers))
+        sheet.update_cell(gf.GD_VIEWS_ROW,column, "Views = " + str(numViewers))
 
     # don't run video deletion if we Ctrl+C out of the process
     if(not gf.killer.kill_now and delete_current):

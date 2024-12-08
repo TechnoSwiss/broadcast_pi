@@ -417,7 +417,7 @@ if __name__ == '__main__':
         try:
             youtube = google_auth.get_authenticated_service(credentials_file, args)
         except Exception as exc:
-            exception = ecx
+            exception = exc
             tb = traceback.format_exc()
             if(verbose): print('!!YouTube Authentication Failure!!')
             gf.sleep(0.5, 2)
@@ -465,7 +465,7 @@ if __name__ == '__main__':
 
     process = None
     streaming = False
-    count_viewers_thrd = threading.Thread(target = count_viewers.count_viewers, args = (viewers_file, graph_file, youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file))
+    count_viewers_thrd = threading.Thread(target = count_viewers.count_viewers, args = (viewers_file, graph_file, youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file, False, googleDoc))
     count_viewers_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
     count_viewers_thrd.start()
     print("Starting stream...")
@@ -558,7 +558,7 @@ if __name__ == '__main__':
                     status, status_description = yt.get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
                     broadcast_status_check = datetime.now()
                     if(verbose): print("Status : " + status)
-                    if(verbose): print(status_description)
+                    if(verbose): print("Description : " + status_description)
                     if(status == 'bad' and (datetime.now() - broadcast_status_length) > timedelta(minutes=broadcast_downgrade_delay[broadcast_index])):
                         broadcast_index += 1
                         # !!!! START DEBUG CODE !!!!
@@ -780,7 +780,7 @@ if __name__ == '__main__':
 
     if(googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
-        sheet.update_cell(insert_row,column, "Views = " + str(numViewers))
+        sheet.update_cell(gf.GD_VIEWS_ROW,column, "Views = " + str(numViewers))
 
     # schedule video deletion task
     # don't setup deletion if forcibly killing process

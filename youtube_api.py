@@ -419,7 +419,10 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
 def next_available_row(sheet, column, cols_to_sample=2):
   # looks for empty row based on values appearing in 1st N columns
   cols = sheet.range(1, column, sheet.row_count, column + cols_to_sample - 1)
-  return max([cell.row for cell in cols if cell.value]) + 1
+  next_row = max([cell.row for cell in cols if cell.value]) + 1
+  if(next_row <= gf.GD_TOTAL_ROW) :
+    next_row = gf.GD_TOTAL_ROW + 1
+  return next_row
 
 def get_sheet_row_and_column(googleDoc, videoID, ward, num_from = None, num_to = None, verbose = None):
     client = gspread.authorize(google_auth.get_credentials_google_drive(ward, num_from, num_to, verbose))
