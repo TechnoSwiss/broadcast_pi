@@ -18,7 +18,7 @@ import update_status # update_status.py localfile
 import insert_event # insert_event.py local file
 import global_file as gf # local file for sharing globals between files
 
-import gspread # pip3 install gspread==2.0.0
+import gspread # pip3 install gspread==4.0.0
 
 def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_deletion_time, args):
     try:

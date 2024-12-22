@@ -22,7 +22,7 @@ import send_email # send_email.py localfile
 import global_file as gf # local file for sharing globals between files
 import delete_event # local file for deleting broadcast
 
-import gspread # pip3 install gspread==2.0.0
+import gspread # pip3 install gspread==4.0.0
 
 NUM_RETRIES = 2
 

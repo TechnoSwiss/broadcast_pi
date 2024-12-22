@@ -16,7 +16,7 @@ import google_auth # google_auth.py local file
 import sms #sms.py local file
 import global_file as gf # local file for sharing globals between files
 
-import gspread # pip3 install gspread==2.0.0
+import gspread # pip3 install gspread==4.0.0
 
 NUM_RETRIES = 5
 
@@ -416,7 +416,7 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
 
     return(currentViewers)
 
-def next_available_row(sheet, column, cols_to_sample=2):
+def next_available_row(sheet, column, cols_to_sample=1):
   # looks for empty row based on values appearing in 1st N columns
   cols = sheet.range(1, column, sheet.row_count, column + cols_to_sample - 1)
   next_row = max([cell.row for cell in cols if cell.value]) + 1
@@ -435,8 +435,10 @@ def get_sheet_row_and_column(googleDoc, videoID, ward, num_from = None, num_to =
         if(sheet.col_count == 1 and sheet.cell(1, 1).value == ""):
             column = 1
         else:
-            column = sheet.col_count + 1
-            sheet.add_cols(1)
+            #column = sheet.col_count + 1
+            #sheet.add_cols(1)
+            column = 1
+            sheet.insert_cols([None], col=1, value_input_option='RAW')
         sheet.update_cell(1,column, videoID)
         sheet.update_cell(2,column, dt.datetime.now().strftime("%m/%d/%Y %H:%M:%S"))
     else:
