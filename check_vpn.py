@@ -17,14 +17,23 @@ ATTEMPTS_PER_HOUR = 2
 ATTEMPTS_PER_DAY  = 6
 DELAY_AFTER_RESTART = 20
 
+SERVER_IP = "192.168.1.1"
+
 def is_vpn_connected(pc_name, num_from = None, num_to = None, verbose = False):
     try:
         ip_addr = check_output(['ip', 'addr']).decode('utf-8')
 
         if('tun' not in ip_addr):
+            if(verbose): print("VPN Connection not present")
             return False
         else:
-            return True
+            response = os.system("ping -c 1 -w2 " + SERVER_IP + " > /dev/null 2>&1")
+            if(response > 0):
+                if(verbose): print("Can't ping server")
+                return False
+            else:
+                if(verbose): print("VPN connection up")
+                return True
     except:
         if(verbose): print(traceback.format_exc())
         if(num_from is not None and num_to is not None):
