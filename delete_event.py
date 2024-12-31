@@ -104,9 +104,10 @@ if __name__ == '__main__':
     parser.add_argument('-t','--run-time',type=str,default='1:10:00',help='Broadcast run time in HH:MM:SS')
     parser.add_argument('-D','--delete-control',type=int,help='Control delete options from command line, bit mapped. delete_current 1 : delete_ready 2 : delete_complete 4')
     parser.add_argument('-C','--current-id',type=str,help='ID value for the current broadcast, used if deleting current broadcast is true')
-    parser.add_argument('--num-viewers',type=int,help='Number of viewers recorded previously, used to calculate number of new viewers since broadcast was live')
+    parser.add_argument('--num-viewers',type=int,default=0,help='Number of viewers recorded previously, used to calculate number of new viewers since broadcast was live')
     parser.add_argument('-I','--insert-next-broadcast',default=False, action='store_true',help='Insert next broadcast, this should only be used if calling from broadcast.py')
-    parser.add_argument('--broadcast-time',type=str, default=None,help='Broadcast date to use in email of final viewer numbers')
+    parser.add_argument('--broadcast-time',type=str, default=None,help='Broadcast tim to use in email of final viewer numbers format of "YYYY-MM-DD HH:MM:SS"')
+    parser.add_argument('--broadcast-date',type=str, default=None,help='Broadcast date to use in email of final viewer numbers format of "YYYY-MM-DD"')
     parser.add_argument('--email-send',default=False, action='store_true',help='Should email be sent when deleting video(s)')
     parser.add_argument('-e','--email-from',type=str,help='Account to send email with/from')
     parser.add_argument('-E','--email-to',type=str,help='Account to send CSV fiel email to')
@@ -231,13 +232,22 @@ if __name__ == '__main__':
             if(not testing and email_send):
                 if(verbose) : print("e-mail total views")
                 if(args.email_from is not None and args.email_to is not None):
-                    send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.num_viewers,  datetime.strptime(args.broadcast_time, "%Y-%m-%d %H:%M:%S"), args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+                    if(args.broadcast_date is not None):
+                        broadcast_time = datetime.strptime(args.broadcast_date + " 12:00:00", "%Y-%m-%d %H:%M:%S")
+                    elif(args.broadcast_time is not None):
+                        broadcast_time = datetime.strptime(args.broadcast_time, "%Y-%m-%d %H:%M:%S")
+                    else:
+                        broadcast_time = None
+                    send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.num_viewers, broadcast_time, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
                 else:
                     if(verbose): print("email_from or email_to argument is None")
             if(googleDoc is not None):
                 sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
                 sheet.update_cell(gf.GD_TOTAL_ROW,column, "Total Views = " + str(numViewers))
     except:
+        # if we hit an exception here, then there might be data missing for this broadcast,
+        # don't delete it yet so we can go back and still pull the data from YouTube
+        delete_current = False
         if(verbose) : print(traceback.format_exc())
         print("Failed to send / update current broadcast records " + current_id)
         if(num_from is not None and num_to is not None):

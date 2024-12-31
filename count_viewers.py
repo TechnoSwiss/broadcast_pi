@@ -272,7 +272,7 @@ if __name__ == '__main__':
     numViewers = yt.get_view_count(youtube, current_id, ward, args.num_from, args.num_to, args.verbose)
     if(not gf.killer.kill_now and email_send):
         if(args.email_from is not None and args.email_to is not None):
-            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
 
     if(googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, args.num_from, args.num_to, args.verbose)

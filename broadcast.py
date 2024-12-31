@@ -776,7 +776,7 @@ if __name__ == '__main__':
         print("e-mail concurrent viewer file")
         if(args.email_from is not None and args.email_to is not None):
             count_viewers.write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
-            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
 
     if(googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
