@@ -284,9 +284,11 @@ if __name__ == '__main__':
         exit()
 
     if(args.broadcast_date is not None):
-        broadcast_time = datetime.strptime(args.broadcast_date + " 12:00:00", "%Y-%m-%d %H:%M:%S")
+        broadcast_time = datetime.strptime(args.broadcast_date + " 12:00:00", "%m/%d/%Y %H:%M:%S")
     elif(args.broadcast_time is not None):
-        broadcast_time = datetime.strptime(args.broadcast_time, "%Y-%m-%d %H:%M:%S")
+        broadcast_time = datetime.strptime(args.broadcast_time, "%m/%d/%Y %H:%M:%S")
+        H, M, S = args.run_time.split(':')
+        broadcast_time = broadcast_time + timedelta(hours=int(H), minutes=int(M),seconds=int(S))
     else:
         broadcast_time = None
 
