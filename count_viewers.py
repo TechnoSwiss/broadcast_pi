@@ -137,7 +137,7 @@ def count_viewers(viewers_file, graph_file, youtube, videoID, ward, num_from = N
                 with open(status, 'w') as statusFile:
                     write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, statusFile, googleDoc)
             else:
-                write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, googleDoc)
+                write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, None, googleDoc)
         if(not gf.killer.kill_now):
             write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
     except:
