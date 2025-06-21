@@ -1,0 +1,16 @@
+# Core dependencies
+google-api-python-client>=2.0.0
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+gspread==4.0.0
+tzlocal
+python-dateutil>=2.8.0
+requests>=2.20.0
+pandas>=1.3.0
+matplotlib>=3.4.0
+mutagen
+twilio>=7.0.0
+
+# Optional system integration (may require system-level packages)
+
+# Additional utilities

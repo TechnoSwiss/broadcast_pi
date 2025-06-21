@@ -8,7 +8,7 @@ import argparse
 import os
 import traceback
 import re
-import pickle
+import json
 
 import google_auth # google_auth.py local file
 import sms #sms.py local file
@@ -124,7 +124,8 @@ def update_live_broadcast_link(live_broadcast_id, args, ward, path_filename = No
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Update YouTube Link')
-    parser.add_argument('-w','--ward',type=str,required=True,help='Name of Ward being broadcast')
+    parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
+    parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
     parser.add_argument('-o','--host-name',type=str,help='The address for the web host to upload HTML link forward page to')
     parser.add_argument('-u','--user-name',type=str,help='The username for the web host')
     parser.add_argument('-H','--home-dir',type=str,help='Home directory SSH id_rsa key is stored under')
@@ -135,7 +136,7 @@ if __name__ == '__main__':
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
- 
+
     if(args.host_name is not None or args.user_name is not None or args.home_dir is not None):
         if(args.host_name is None or args.user_name is None or args.home_dir is None):
             print("If host-name, user-name, or home-dir parameter is defined, all 3 parameters must be defined.")
@@ -145,14 +146,45 @@ if __name__ == '__main__':
             print("If SMS notification numbers are defined, both From and To numbers must be defined.")
             exit()
 
-    credentials_file = args.ward.lower() + '.auth'
-  
-    youtube = google_auth.get_authenticated_service(credentials_file, args)
-    
+    ward = args.ward
+    num_to = args.num_to
+    num_from = args.num_from
+    verbose = args.verbose
+
+    if(args.config_file is not None):
+        if("/" in args.config_file):
+            config_file = args.config_file
+        else:
+            config_file =  os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file
+    if(config_file is not None and os.path.exists(config_file)):
+        with open(config_file, "r") as configFile:
+            config = json.load(configFile)
+
+            if 'broadcast_ward' in config:
+                ward = config['broadcast_ward']
+            if 'url_ssh_host' in config:
+                args.host_name = config['url_ssh_host']
+            if 'url_ssh_username' in config:
+                args.user_name = config['url_ssh_username']
+            if 'url_ssh_key_dir' in config:
+                args.home_dir = config['url_ssh_key_dir']
+            if 'notification_text_from' in config:
+                num_from = config['notification_text_from']
+            if 'notification_text_to' in config:
+                num_to = config['notification_text_to']
+
+    if(ward is None):
+        print("!!Ward is required argument!!")
+        sys.exit("Ward is required argument")
+
+    credentials_file = ward.lower() + '.auth'
+
+    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', verbose)
+
     #while we're at it, lets go ahead and setup the link too
     videos = []
-  
-    #attempt to get list of curreny videos from YouTube, the first video in this list should be the next URL used for live broadcasts
+
+    #attempt to get list of current videos from YouTube, the first video in this list should be the next URL used for live broadcasts
     try:
         uploads_playlist_id = get_my_uploads_list(youtube)
         if uploads_playlist_id:
@@ -166,4 +198,4 @@ if __name__ == '__main__':
         exit()
 
     #make sure link on hillsborostake.org is current
-    update_live_broadcast_link(videos[0], args, args.ward, args.html_filename, None, args.verbose)
+    update_live_broadcast_link(videos[0], args, ward, args.html_filename, None, verbose)

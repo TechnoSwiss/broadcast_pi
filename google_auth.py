@@ -6,17 +6,19 @@
 import argparse
 import os
 import traceback
-import pickle
+import json
+
+from tzlocal import get_localzone # pip3 install tzlocal
+from datetime import datetime
 
 import sms #sms.py local file
 
-import google.oauth2.credentials # pip3 install google-auth-oauthlib
-import google_auth_oauthlib.flow
-from googleapiclient.discovery import build # pip3 install google-api-python-client
-from googleapiclient.errors import HttpError
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials # pip3 install google-auth-oauthlib
 from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build # pip3 install google-api-python-client
+from google.auth.exceptions import RefreshError
 
-from oauth2client.service_account import ServiceAccountCredentials # pip3 install oauth2client
 
 # The CLIENT_SECRETS_FILE variable specifies the name of a file that contains
 # the OAuth 2.0 information for this application, including its client_id and
@@ -28,30 +30,24 @@ from oauth2client.service_account import ServiceAccountCredentials # pip3 instal
 #   https://developers.google.com/youtube/v3/guides/authentication
 # For more information about the client_secrets.json file format, see:
 #   https://developers.google.com/api-client-library/python/guide/aaa_client_secrets
+# this OAuth 2.0 is for the application, not a specific account, you'll authenticate
+# this against the account as part of the store_authenticated_service function
 CLIENT_SECRETS_FILE = 'client_secret.json'
 
 # This OAuth 2.0 access scope allows for read-only access to the authenticated
 # user's account, but not other types of account access.
-#SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/yt-analytics.readonly"]
-SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
-API_SERVICE_NAME = 'youtube'
-API_VERSION = 'v3'
-
-# This auth process is for gspread for editing Google Docs
-# The clients scret file can be acquired from the {{ Google Cloud Console }} at
-# {{ https://cloud.google.com/console }}.
-# Create a seperate project for the Google Docs API
-# Please ensure that you have enabled the Google Sheets API and Google Drive API for your project.
-DRIVE_CLIENT_SECRETS_FILE = 'client_key.json'
-
-DRIVE_SCOPES = [
+SCOPES = [
+    'https://www.googleapis.com/auth/youtube.force-ssl',
+    'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/drive.file'
     ]
+API_SERVICE_YOUTUBE = 'youtube'
+API_SERVICE_GDRIVE = 'drive'
+API_VERSION = 'v3'
 
-
-def store_authenticated_service(credentials_file):
-    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+def store_authenticated_service(credentials_file, ward, num_from, num_to, scopes = SCOPES, verbose = False):
+    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, scopes)
     print("Before using URL setup tunnel from PC to broadcast system port L8088 localhost:8088")
 
     credentials = flow.run_local_server(
@@ -61,39 +57,86 @@ def store_authenticated_service(credentials_file):
             success_message='The auth flow is complete; you may close this window.',
             open_browser=False)
 
-    with open(credentials_file, 'wb') as f:
-        pickle.dump(credentials, f)
+    with open(credentials_file, 'w') as f:
+        f.write(credentials.to_json())
 
-def get_authenticated_service(credentials_file, args, api_service = API_SERVICE_NAME, api_version = API_VERSION):
+    local_tz = get_localzone()
+    local_expiry = credentials.expiry.astimezone(local_tz)
+    print(f"✅ Credentials stored. Token expires at (local time): {local_expiry.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+
+def refresh_if_needed(credentials, credentials_file, ward, num_from, num_to, verbose=False):
+    if credentials.expired and credentials.refresh_token:
+        try:
+            credentials.refresh(Request())
+            # Save the refreshed credentials
+            with open(credentials_file, 'w') as f:
+                f.write(credentials.to_json())
+            if verbose:
+                local_tz = get_localzone()
+                local_expiry = credentials.expiry.astimezone(local_tz)
+                print(f"✅ Token refreshed; valid until {local_expiry.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        except RefreshError as e:
+            print("❌ Token refresh failed:", str(e))
+            if(num_from is not None and num_to is not None): sms.send_sms(num_from, num_to, ward + " Ward Google API Refresh Token failed!")
+            raise
+    return credentials
+
+def get_authenticated_service(credentials_file, ward, num_from, num_to, api_service = API_SERVICE_YOUTUBE, api_version = API_VERSION, verbose = False):
     # Authorize the request and store authorization credentials.
     if os.path.exists(credentials_file):
-        with open(credentials_file, 'rb') as f:
-            credentials = pickle.load(f)
+        with open(credentials_file, 'r') as f:
+            credentials = Credentials.from_authorized_user_info(json.load(f), SCOPES)
+        credentials = refresh_if_needed(credentials, credentials_file, ward, num_from, num_to, verbose)
     else:
-        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, args.ward + " Ward YouTube Authentication Required!")
-        print("YouTube Authorization Required, please run google_auth.py")
+        if(num_from is not None and num_to is not None): sms.send_sms(num_from, num_to, ward + " Ward Google API Authentication Required!")
+        print("Google API Authorization Required, please run google_auth.py")
         exit()
 
     return build(api_service, api_version, credentials = credentials)
 
-def get_credentials_google_drive(ward, num_from = None, num_to = None, verbose = False):
-    credentials = None
-    try:
-        credentials = ServiceAccountCredentials.from_json_keyfile_name(DRIVE_CLIENT_SECRETS_FILE, DRIVE_SCOPES)
-    except:
-        if(num_from is not None): sms.send_sms(num_from, num_to, ward + " Ward Failed to get Google Drive Creds!")
-        print("Failed to get Google Drive Creds")
+def get_credentials_google_sheets(credentials_file, ward, num_from, num_to, verbose = False):
+    # Authorize the request and store authorization credentials.
+    if os.path.exists(credentials_file):
+        with open(credentials_file, 'r') as f:
+            credentials = Credentials.from_authorized_user_info(json.load(f), SCOPES)
+        credentials = refresh_if_needed(credentials, credentials_file, ward, num_from, num_to, verbose)
+    else:
+        if(num_from is not None and num_to is not None): sms.send_sms(num_from, num_to, ward + " Ward Google API Authentication Required!")
+        print("Google API Authorization Required, please run google_auth.py")
+        exit()
 
     return credentials
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Store YouTube Authentication')
-    parser.add_argument('-w','--ward',type=str,required=True,help="Name of Ward storing authentication for")
+    parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
+    parser.add_argument('-w','--ward',type=str,help="Name of Ward storing authentication for")
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
-  
-    credentials_file = args.ward.lower() + '.auth'
-  
-    store_authenticated_service(credentials_file)
+
+    verbose = args.verbose
+    num_from = args.num_from
+    num_to = args.num_to
+    ward = args.ward
+
+    if(args.config_file is not None):
+        if("/" in args.config_file):
+            config_file = args.config_file
+        else:
+            config_file =  os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file
+    if(config_file is not None and os.path.exists(config_file)):
+        with open(config_file, "r") as configFile:
+            config = json.load(configFile)
+
+            if 'broadcast_ward' in config:
+                ward = config['broadcast_ward']
+            if 'notification_text_from' in config:
+                num_from = config['notification_text_from']
+            if 'notification_text_to' in config:
+                num_to = config['notification_text_to']
+
+    credentials_file = ward.lower() + '.auth'
+
+    store_authenticated_service(credentials_file, ward, num_from, num_to, SCOPES, verbose)

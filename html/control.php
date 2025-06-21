@@ -34,6 +34,14 @@ if(preg_match("/resume/i", $action)) {
     if(file_exists("$path/webstream")) {
         shell_exec("rm $path/webstream");
     }
+}  else if(preg_match("/stoprecord/i", $action)) {
+    if(file_exists("$path/audio_record")) {
+        shell_exec("rm $path/audio_record");
+    }
+} else if(preg_match("/^record/i", $action)) {
+    if(!file_exists("$path/audio_record")) {
+        touch("$path/audio_record");
+    }
 } else if(preg_match("/moving/i", $action)) {
     #$presetfile = fopen("$path/preset", "w");
     #fwrite($presetfile, "0\n");
@@ -43,10 +51,10 @@ $viewers = 0;
 $viewerfile = fopen("$path/watching", "r") or die("Unable to open viewer file!");
 while(!feof($viewerfile))
 {
-	$watching = trim(fgets($viewerfile));
-	if(preg_match('/^[1-9][0-9]{0,15}$/',$watching)) {
+    $watching = trim(fgets($viewerfile));
+    if(preg_match('/^[1-9][0-9]{0,15}$/',$watching)) {
             $viewers = $watching;
-	}
+    }
 }
 fclose($viewerfile);
 
@@ -57,7 +65,7 @@ while(!feof($statusfile))
 {
     $line = rtrim(fgets($statusfile));
     if(preg_match('/,/', $line)) {
-	array_push($schedule, explode(",", $line));
+    array_push($schedule, explode(",", $line));
     }
 }
 fclose($statusfile);
@@ -79,7 +87,10 @@ if(file_exists("$path/preset")) {
     $preset = preg_replace("/(\-?\d+)[.\n]*/", "$1", $prsetcontent);
 }
 
+$recording = file_exists("$path/audio_record");
+
 $data["buttonPaused"] = $buttonPaused;
+$data["recording"] = $recording;
 $data["viewers"] = $viewers;
 $data["schedule"] = $schedule;
 $data["bandwidth"] = $bandwidth;

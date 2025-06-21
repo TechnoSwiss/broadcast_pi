@@ -21,7 +21,7 @@ body {
     position: relative;
 }
 
-#pauseResume, #extend, #previewbutton, #viewers {
+#pauseResume, #extend, #previewbutton, #startStopRecord, #viewers {
     padding: 0px;
     text-align: center;
     display: block;
@@ -38,6 +38,15 @@ body {
     transform: rotate(0deg);
 }
 
+#startStopRecord {
+    color: black;
+    background-color: lightgrey;
+    height: 5vmin;
+    margin-top: 1vmin;
+    font-size: 5vmin;
+    line-height: 5vmin;
+}
+
 #extend {
     color: black;
     background-color: lightBlue;
@@ -46,7 +55,7 @@ body {
     display: none;
 }
 
-#pauseResume:active::before, #extend:active::before {
+#pauseResume:active::before, #extend:active::before, #startStopRecord:active::before {
     content: "";
     width: 105%;
     height: 200%;
@@ -55,6 +64,10 @@ body {
     display: block;
     position: absolute;
     background-color: rgba(255, 255, 255, .4);
+}
+
+#startStopRecord:active::before {
+    background-color: rgba(0, 0, 0, .5);
 }
 
 #pauseResume::after {
@@ -84,6 +97,24 @@ body {
     content: "Resume";
 }
 
+#startStopRecord {
+    margin-top: 4vmin;
+}
+
+#startStopRecord::after {
+    display: block;
+    text-align: center;
+    color: black;
+    background-color: lightgrey;
+    content: "\23FA  Record";
+}
+
+#startStopRecord.recording:after {
+    color: white;
+    background-color: firebrick;
+    content: "\23F9  Stop Rec";
+}
+
 #title, .status {
     text-align: center;
     font-size: 10vmin;
@@ -105,6 +136,22 @@ body {
     margin-top: 4vmin;
     left: 50%;
     margin-left: -20vmin;
+}
+
+#startStopRecord {
+    position: relative;
+    width: 40vmin;
+    margin-top: 4vmin;
+    left: 50%;
+    margin-left: -20vmin;
+    padding: none;
+    font-family: Arial;
+    text-align: center;
+    font-size: 5vmin;
+    line-height: 8vmin;
+    height: 10vmin;
+    display: block;
+    border: 1vmin solid black;
 }
 
 #content:last-child {

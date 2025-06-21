@@ -13,11 +13,11 @@ import sys
 import traceback
 import faulthandler
 import re
-import pickle
 import subprocess
 import time
 import threading
 import json
+import random
 
 from subprocess import check_output
 import socket
@@ -25,6 +25,7 @@ import socket
 from shlex import split
 from datetime import datetime, timedelta
 from dateutil import tz # pip install python-dateutil
+from mutagen.mp3 import MP3 # pip install mutagen
 
 import google_auth # google_auth.py local file
 import update_link # update_link.py local file
@@ -38,13 +39,11 @@ import presets # presets.py local file
 import local_stream as ls # local_stream.py local file
 import global_file as gf # local file for sharing globals between files
 import delete_event # local file for deleting broadcast
+import broadcast_thrd as bt # broadcast_thrd.py local file
 
 import gspread # pip3 install gspread==4.0.0
 
 NUM_RETRIES = 5
-EXTEND_TIME_INCREMENT = 5
-MAX_PROCESS_POLL_FAILURE = 3
-PROCESS_POLL_CLEAR_AFTER = 5
 
 class GracefulKiller:
   kill_now = False
@@ -73,25 +72,50 @@ def signal_segfault(sig, frame):
 #   os._exit(1) 
     sys.exit("Caught SegFault, exit and handle notification and restart from outside script")
 
+def get_active_instances(service_template_prefix):
+    try:
+        output = subprocess.check_output(
+            ["systemctl", "list-units", "--type=service", "--state=running", "--no-legend"],
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+        return [
+            line.split()[0]
+            for line in output.splitlines()
+            if line.startswith(service_template_prefix)
+        ]
+    except subprocess.CalledProcessError:
+        return []
+
+def stop_instance(unit_name):
+    try:
+        print(f"Stopping: {unit_name}")
+        subprocess.run(
+            ["sudo", "systemctl", "stop", unit_name],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        print(f"Stopped: {unit_name}")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, f"{ward} stopping existing broadcast {unit_name}", verbose)
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to stop {unit_name}: {e.stderr.decode().strip()}")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, f"{ward} failed to stop {unit_name} : {e.stderr.decode().strip()}", verbose)
+
+def stop_other_instances(service_template_prefix, exclude_instance=None):
+    running = get_active_instances(service_template_prefix)
+    for unit in running:
+        if exclude_instance and unit == exclude_instance:
+            continue
+        stop_instance(unit)
+
 def check_report_missed_sms(ward, num_from = None, num_to = None, verbose = None):
     if(gf.sms_missed > 0):
         print("There were (" + str(gf.sms_missed) + ") missed SMS messages.")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " broadcast had (" + str(gf.sms_missed) + ") missed SMS messages!", verbose)
-
-def check_extend(extend_file, stop_time, status_file, ward, num_from = None, num_to = None):
-    global extend_time
-    if os.path.exists(extend_file):
-        extend_time += EXTEND_TIME_INCREMENT
-        os.remove(extend_file)
-        if(args.extend_max is None or extend_time <= args.extend_max):
-            stop_time = stop_time + timedelta(minutes=EXTEND_TIME_INCREMENT)
-            update_status.update("stop", None, stop_time, status_file, ward, num_from, num_to, verbose)
-            print("extending broadcast time by " + str(EXTEND_TIME_INCREMENT) + " min.")
-            print("stop_time extended to: " + stop_time.strftime("%d-%b-%Y %H:%M:%S"))
-        else:
-            print("broadcast time can't be extended")
-    return(stop_time)
 
 def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_filename, num_from = None, num_to = None, verbose = False):
      # want to make sure that the current live broadcast is the one we think it is 
@@ -99,7 +123,7 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
     verify_broadcast = False
     start_verify = datetime.now()
     start_failure_sms_sent = False
-    while(not verify_broadcast):
+    while(not verify_broadcast and not gf.killer.kill_now):
         live_id = yt.get_live_broadcast(youtube, ward, num_from, num_to, verbose)
         if(live_id is None):
             print("No live broadcast found")
@@ -129,6 +153,8 @@ if __name__ == '__main__':
   verbose = False
   num_from = None
   num_to = None
+  audio_record = False
+  pause_music = None
   ward = "Undefined"
 
   try:
@@ -176,13 +202,17 @@ if __name__ == '__main__':
     gf.killer = GracefulKiller()
     signal.signal(signal.SIGSEGV, signal_segfault)
 
-    # belive this was added so that is the script is restarted by systemd we don't end up crashing and restarting instantly over and over again
-    for n in range(6):
-        print("sleep number {}".format(str(n)))
-        gf.sleep(1, 3)
-    #os.kill(os.getpid(), signal.SIGSEGV)
+    if "INVOCATION_ID" in os.environ:
+        print("Started by systemd.")
+    else:
+        print("Started manually or by another process.")
 
-    extend_time = 0 # keep track of extend time so we can cap it if needed
+    # # I now believe this was added to set the gf.sleep function and was left in by accident, so commenting this out for now to see if it causes any problems
+    # # belive this was added so that is the script is restarted by systemd we don't end up crashing and restarting instantly over and over again
+    # for n in range(6):
+        # print("sleep number {}".format(str(n)))
+        # gf.sleep(1, 3)
+
     recurring = True # is this a recurring broadcast, then create a new broadcast for next week
     broadcast_day = None # for recurring broadcasts, what day of the week is the broadcast
     audio_only_image = None # image that gets used for audio only broadcast, this is a super low bandwidth broadcast option and is only avaialble if image is provided
@@ -195,6 +225,7 @@ if __name__ == '__main__':
     bandwidth_file = None
     broadcast_watching_file = None
     broadcast_reset_file = None
+    audio_record_control = None
     local_stream = None
     local_stream_output = None
     local_stream_control = None
@@ -280,6 +311,12 @@ if __name__ == '__main__':
                 args.audio_gain = config['audio_gain']
             if 'audio_gate' in config:
                 args.audio_gate = config['audio_gate']
+            if 'audio_record' in config:
+                audio_record = config['audio_record']
+            if 'audio_record_control' in config:
+                audio_record_control = config['audio_record_control']
+            if 'pause_music' in config:
+                pause_music = config['pause_music']
             if 'broadcast_status' in config:
                 args.status_file = config['broadcast_status']
             if 'broadcast_pause_control' in config:
@@ -339,19 +376,19 @@ if __name__ == '__main__':
     viewers_file = ward.lower() + '_viewers.csv'
     graph_file = ward.lower() + '_viewers.png'
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, ward, num_from, num_to, verbose)
+    start_time, gf.stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, ward, num_from, num_to, verbose)
 
     update_start_stop = False
-    if(datetime.now() >= stop_time):
+    if(datetime.now() >= gf.stop_time):
         print("Stop time is less than current time!")
         # most common cause for this error is trying to run broadcast for testing
         # we want this to go ahead and proceed so adjust timing to allow for testing
         update_start_stop = True
 
-    H, M, S = args.run_time.split(':')
+    H, M, S = map(int, args.run_time.split(':'))
     # adding 1 minute to the duration to allow for some error in start time
     # so we're not tripping this by accident if a timer starts a little early
-    if((stop_time - datetime.now()) > timedelta(hours=int(H), minutes=int(M) + 1,seconds=int(S))):
+    if((gf.stop_time - datetime.now()) > timedelta(hours=int(H), minutes=int(M) + 1,seconds=int(S))):
         print("Duration is longer than requested run time!")
         # most common cause for this error is trying to run the broadcast for testing
         # we want this to go ahead and proceed so adjust timing to allow for testing
@@ -359,12 +396,12 @@ if __name__ == '__main__':
 
     if(update_start_stop):
         start_time = datetime.now() #start time also needs to be update since YouTube will not create broadcasts in the past if a broadcast needs to be created
-        stop_time = start_time + timedelta(hours=int(H), minutes=int(M),seconds=int(S))
-        print("stop_time updated to: " + stop_time.strftime("%d-%b-%Y %H:%M:%S"))
+        gf.stop_time = start_time + timedelta(hours=int(H), minutes=int(M),seconds=int(S))
+        print("stop_time updated to: " + gf.stop_time.strftime("%d-%b-%Y %H:%M:%S"))
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " stop time was less than start time! stop time update to: " + stop_time.strftime("%d-%b-%Y %H:%M:%S"), verbose)
+            sms.send_sms(num_from, num_to, ward + " stop time was less than start time! stop time update to: " + gf.stop_time.strftime("%d-%b-%Y %H:%M:%S"), verbose)
     else:
-        print("stop_time : " + stop_time.strftime("%d-%b-%Y %H:%M:%S"))
+        print("stop_time : " + gf.stop_time.strftime("%d-%b-%Y %H:%M:%S"))
 
     if not os.path.exists(args.pause_image):
         if(num_from is not None): sms.send_sms(num_from, num_to, ward + " no pause image available!", verbose)
@@ -372,7 +409,7 @@ if __name__ == '__main__':
         sys.exit("Pause image not found and is require for paused stream")
 
     credentials_file = ward.lower() + '.auth'
-    
+
     audio_delay = ''
     video_delay = ''
     if(args.audio_delay < 0):
@@ -393,33 +430,66 @@ if __name__ == '__main__':
         camera_parameters_lbw = ' -c:v h264 -rtsp_transport tcp -i "rtsp://' + rtsp_stream_lowbandwidth + '" -vf fps=fps=15' if rtsp_stream_lowbandwidth is not None else None
         if(args.use_ptz):
             ip_pattern = re.compile('''((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)''')
-            camera_ip = ip_pattern.search(args.rtsp_stream).group(0)
+            match = ip_pattern.search(args.rtsp_stream)
+            if match:
+                camera_ip = match.group(0)
+            else:
+                tb = traceback.format_exc()
+                if(verbose): print(tb)
+                gf.log_exception(tb, "failed getting camera IP address")
+                print("Failed getting camera IP address")
+                if(num_from is not None and num_to is not None):
+                    sms.send_sms(num_from, num_to, ward + " failed getting camera IP address!", verbose)
 
     # remove extend file when we first start so we don't accidently extend the broadcast at the begining
     if os.path.exists(args.extend_file):
         os.remove(args.extend_file)
 
-    # check if ffmpeg is already running, which would signal that previous broadcast didn't end correctly, and bad things will happen
-    for line in os.popen("ps aux | grep ffmpeg | grep -v grep"):
-        fields = line.split()
-        pid = fields[1]
+    # remove any audio recordings or partial recordings so they don't get concatinated into the final result if we do a recording
+    mp3_base_path = os.path.abspath(os.path.dirname(__file__))
+    mp3_base_filename = args.url_filename if args.url_filename is not None else ward
+    if(verbose): print(f"MP3 Base Path : {mp3_base_path}")
+    try:
+        pattern = re.compile(rf"^{re.escape(mp3_base_filename)}_.*\.mp3$")
+        remove_old_recordings = sorted(f for f in os.listdir(mp3_base_path) if f.endswith(".mp3") and pattern.match(f))
+        if(len(remove_old_recordings) > 0):
+            print("MP3 file(s) exists, removing")
+            if(verbose): print(f"MP3 Files for removal: {remove_old_recordings}")
+        for remove in remove_old_recordings:
+            os.remove(remove)
+    except:
+        tb = traceback.format_exc()
+        if(verbose): print(tb)
+        gf.log_exception(tb, "failed removing existing MP3 files")
+        print("Failed failed removing existing MP3 files")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed removing existing MP3 files!", verbose)
 
-        os.kill(int(pid), signal.SIGKILL)
+    try:
+        current_instance = f"broadcast@{os.path.basename(config_file)}.service"
+        instances = get_active_instances("broadcast@")
+        if len(instances) > 1:
+            print(f"Found running instances: {instances}")
+            stop_other_instances("broadcast@", exclude_instance=current_instance)
+    except:
+        tb = traceback.format_exc()
+        if(verbose): print(tb)
+        gf.log_exception(tb, "failed checking for other active broadcasts")
+        print("Failed checking for other active broadcasts")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed checking for other broadcasts!", verbose)
 
-        print("ffmpeg still running from previous broadcast with pid : " + pid + " killing process")
-        if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward ffmpeg still running from previous broadcast with pid : " + pid + "! Killing process.", verbose)
- 
     #authenticate with YouTube API
     exception = None
     for retry_num in range(NUM_RETRIES):
         exception = None
         tb = None
         try:
-            youtube = google_auth.get_authenticated_service(credentials_file, args)
+            youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', verbose)
         except Exception as exc:
             exception = exc
             tb = traceback.format_exc()
-            if(verbose): print('!!YouTube Authentication Failure!!')
+            if(verbose): print(f"!!YouTube Authentication Failure!! retry({retry_num + 1} of {NUM_RETRIES})")
             gf.sleep(0.5, 2)
     if(exception):
         print(tb)
@@ -427,7 +497,7 @@ if __name__ == '__main__':
         if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward YouTube authentication failure!", verbose)
         # we can't continue if not authenticated to YouTube so exit out
         sys.exit("Can't authenticate to YouTube")
-  
+
     #get next closest broadcast endpoint from youtube (should only be one)
     current_id = yt.get_next_broadcast(youtube, ward, num_from, num_to, verbose)
     if(current_id is None):
@@ -439,50 +509,70 @@ if __name__ == '__main__':
             sys.exit("No current broadcast, and new broadcast creation failed")
     
     # if we have a broadcast status of created (which is what we should be getting here each time) then we need to bind the broadcast before we can use it
-    if(yt.get_broadcast_status(youtube, current_id, ward, num_from, num_to, verbose == 'created')):
+    broadcast_status = yt.get_broadcast_status(youtube, current_id, ward, num_from, num_to, verbose)
+    print(f"Broadcast status : {broadcast_status} for broadcast ID {current_id}")
+    if(broadcast_status == 'created'):
         insert_event.bind_event(youtube, current_id, ward, num_from, num_to, verbose)
 
     #make sure link on web host is current
     update_link.update_live_broadcast_link(current_id, args, ward, args.html_filename, args.url_filename)
 
+    # check if we have music defined to play during the pause
+    pause_audio_cmd = "-f lavfi -i anullsrc"
+    if(pause_music is not None):
+        print("Pause music defined, create list")
+        random.shuffle(pause_music)
+        
+        # get MP3 file durations
+        durations = [(f, int(MP3(f).info.length)) for f in pause_music]
+        if(verbose): print(f"Durations : {durations}")
+        playlist = []
+        H, M, S = map(int, args.run_time.split(':'))
+        target_seconds = timedelta(hours=H, minutes=M, seconds=S).total_seconds() + (int(args.extend_max) * 60)
+        if(verbose): print(f"Target Minutes : {str(target_seconds / 60)}")
+        total_time = 0
+        index = 0
+        while total_time < target_seconds and durations:
+            f, dur = durations[index % len(durations)]
+            playlist.append(f)
+            total_time += dur
+            index += 1
+
+        with open(mp3_base_path + "/mp3_play_list", "w") as f:
+            f.writelines("file '" + os.path.join(mp3_base_path, fn.replace("'", "'\\''")) + "'\n" for fn in playlist)
+        if(verbose): print(f"Pause music playlist : {playlist}")
+        pause_audio_cmd = "-f concat -safe 0 -re -i mp3_play_list"
+
     #kick off broadcast
-    ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
-    ffmpeg_lbw = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters_lbw + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 1024k -maxrate 1024k -bufsize 2048k -strict experimental -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if camera_parameters_lbw is not None else ffmpeg
-    ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -loop 1 -i ' + audio_only_image + ' -c:v libx264 -filter:v fps=fps=15 -g 7 -acodec libmp3lame -ar 44100 -threads 4 -crf 18 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if audio_only_image is not None else ffmpeg
-    ffmpeg_img = 'ffmpeg -thread_queue_size 2048 -f lavfi -i anullsrc -thread_queue_size 2048 -loop 1 -i ' + args.pause_image + ' -c:v libx264 -vf "drawtext=font=calibri-bold:fontsize=56:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=835,fps=4" -g 7 -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
+    ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
+    ffmpeg_lbw = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters_lbw + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 1024k -maxrate 1024k -bufsize 2048k -strict experimental -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if camera_parameters_lbw is not None else ffmpeg
+    ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -framerate 4 -loop 1 -i ' + audio_only_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=12:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=185" -g 2 -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if audio_only_image is not None else ffmpeg
+    ffmpeg_img = 'ffmpeg -thread_queue_size 2048 ' + pause_audio_cmd + ' -thread_queue_size 2048 -framerate 4 -loop 1 -i ' + args.pause_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=56:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=835" -g 2' + (' -acodec aac -ar 44100 -b:a 128k -ac 1 -shortest ' if pause_music is not None else ' ') + '-f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
 
     broadcast_stream = [ffmpeg, ffmpeg_lbw, ffmpeg_audio]
-    broadcast_index = 0
-    broadcast_index_new = 0
     broadcast_downgrade_delay = [2, 4, 4] # how long to we wait before step from one broadcast stream to the next?
-    broadcast_status_length = datetime.now()
-    broadcast_status_check = datetime.now()
-    process_poll_failure = 0
-    process_poll_clear = 0
 
     for ffmpeg_command in broadcast_stream:
         if(verbose): print("\nffmpeg command : " + ffmpeg_command + "\n")
+    if(verbose): print("\nffmpeg pause command : " + ffmpeg_img + "\n")
 
-    process = None
-    streaming = False
-    count_viewers_thrd = threading.Thread(target = count_viewers.count_viewers, args = (viewers_file, graph_file, youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file, False, googleDoc))
+    count_viewers_thrd = threading.Thread(target = count_viewers.count_viewers, args = (credentials_file, viewers_file, graph_file, youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file, False, googleDoc), name="CountViewerThread")
     count_viewers_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
     count_viewers_thrd.start()
     print("Starting stream...")
-    verify_broadcast = threading.Thread(target = verify_live_broadcast, args = (youtube, ward, args, current_id, args.html_filename, args.url_filename, num_from, num_to, verbose))
+    verify_broadcast = threading.Thread(target = verify_live_broadcast, args = (youtube, ward, args, current_id, args.html_filename, args.url_filename, num_from, num_to, verbose), name="VerifyLiveBroadcastThread")
     verify_broadcast.daemon = True
     verify_broadcast.start()
     if(local_stream is not None and local_stream_output is not None and local_stream_control is not None):
-        stream_local = threading.Thread(target = ls.local_stream_process, args = (ward, local_stream, local_stream_output, local_stream_control, num_from, num_to, verbose))
+        stream_local = threading.Thread(target = ls.local_stream_process, args = (ward, local_stream, local_stream_output, local_stream_control, num_from, num_to, verbose), name="LocalStreamThread")
         stream_local.daemon = True
         stream_local.start()
     if(camera_ip is not None and preset_file is not None and preset_status_file is not None):
-        preset_report = threading.Thread(target = presets.report_preset, args = (5, ward, camera_ip, preset_file, preset_status_file, num_from, num_to, verbose))
+        preset_report = threading.Thread(target = presets.report_preset, args = (5, ward, camera_ip, preset_file, preset_status_file, num_from, num_to, verbose), name="PresetReportThread")
         preset_report.daemon = True
         preset_report.start()
 
     broadcast_start = datetime.now()
-    stream_last = 0
 
     #if reset file exists clean it up here, we want to wait till we get this far so hopefully we've bypassed the issue that's causing the reset to be attempted
     try:
@@ -497,205 +587,66 @@ if __name__ == '__main__':
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed cleaning up reset file!", verbose)
 
-    while(datetime.now() < stop_time and not gf.killer.kill_now):
+    broadcast_thrd = threading.Thread(target = bt.broadcast, args = (youtube, current_id, start_time, ward, camera_ip, broadcast_stream, broadcast_downgrade_delay, bandwidth_file, ffmpeg_img, audio_record, audio_record_control, num_from, num_to, args, verbose), name="BroadcastThread")
+    broadcast_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
+    broadcast_thrd.start()
+
+    while(datetime.now() < gf.stop_time and not gf.killer.kill_now):
         try:
-            stream = 0 if os.path.exists(args.control_file) else 1 # stream = 1 means we should be broadcasting the camera feed, stream = 0 means we should be broadcasting the title card "pausing" the video
+            if(not broadcast_thrd.is_alive()):
+                print("**Broadcast Thread Died**")
+                if(num_from is not None and num_to is not None):
+                    sms.send_sms(num_from, num_to, ward + " broadcast thread died.", verbose)
+                print("**Restarting Broadcast Thread**")
+                broadcast_thrd = threading.Thread(target = bt.broadcast, args = (youtube, current_id, start_time, ward, camera_ip, broadcast_stream, broadcast_downgrade_delay, bandwidth_file, ffmpeg_img, audio_record, audio_record_control, num_from, num_to, args, verbose), name="BroadcastThread")
+                broadcast_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
+                broadcast_thrd.start()
         except:
-            if(verbose): print(traceback.format_exc())
-            print("Failure reading control file")
+            tb = traceback.format_exc()
+            if(verbose): print(tb)
+            gf.log_exception(tb, "failed restarting broadcast thread")
+            print("**Failed restarting broadcast thread**")
             if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, ward + " had a failure reading the control file!", verbose)
+                sms.send_sms(num_from, num_to, ward + " failed restarting broadcast thread!", verbose)
+            time.sleep(15) # something has gone wrong here, we need to figure out how to fix this, in the meantime add some delay so we don't spam the error log
 
-        if(stream == 1 and streaming == False):
-          try:
-            print("main stream")
-            if(args.use_ptz and stream_last == 0):
-                stream_last = stream
-                try:
-                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&2"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at pulpit before streaming
-                except:
-                    print("PTZ Problem")
-                time.sleep(3) # wait for camera to get in position before streaming, hand count for this is about 3 seconds.
-            streaming = True
-            process = subprocess.Popen(split(broadcast_stream[broadcast_index]), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            process_terminate = False
-            # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-            update_status.update("broadcast", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
-            while process.poll() is None:
-                stop_time = check_extend(args.extend_file, stop_time, args.status_file, ward, num_from, num_to)
-                if(os.path.exists(args.control_file) or datetime.now() > stop_time or gf.killer.kill_now):
-                    process_terminate = True
-                    process.terminate()
-                    process.wait()
-                    break;
-                try:
-                    if(bandwidth_file is not None and os.path.exists(bandwidth_file)):
-                        with open(bandwidth_file, "r") as bandwidthFile:
-                            broadcast_index_new = int(bandwidthFile.readline())
-                            if(broadcast_index_new < len(broadcast_stream) and broadcast_index_new >= 0):
-                                if(broadcast_index != broadcast_index_new):
-                                    broadcast_index = broadcast_index_new
-                                    print("Setting broadcast to index " + str(broadcast_index))
-                                    process_terminate = True
-                                    process.terminate()
-                                    process.wait()
-                                    break;
-                            else:
-                                raise Exception("Invalid broadcast index")
-                except:
-                    if(verbose): print(traceback.format_exc())
-                    print("Failure reading bandwidth file")
-                    if(num_from is not None and num_to is not None):
-                        sms.send_sms(num_from, num_to, ward + " had a failure reading the bandwidth file!", verbose)
-                # if we're already at the lowest bandwidth broadcast there's no reason to keep checking to see if we need to reduce bandwidth
-                if(broadcast_index < (len(broadcast_stream) - 1) and (datetime.now() - broadcast_status_check) > timedelta(minutes=1)):
-                    # every minute grab the broadcast status so we can reduce the bandwidth if there's problems
-                    # if gf.current_id has been defined, then verify_life_broadcast detected a change in the video id we're using, so we need to update for that
-                    if(gf.current_id and gf.current_id != current_id):
-                        print("Live ID doesn't match Current ID, updating status")
-                        print(current_id + " => " + gf.current_id)
-                        current_id = gf.current_id
-                    status, status_description = yt.get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
-                    broadcast_status_check = datetime.now()
-                    if(verbose): print("Status : " + status)
-                    if(verbose): print("Description : " + status_description)
-                    if(status == 'bad' and (datetime.now() - broadcast_status_length) > timedelta(minutes=broadcast_downgrade_delay[broadcast_index])):
-                        broadcast_index += 1
-                        # !!!! START DEBUG CODE !!!!
-                        # if we're going to reduce the broadcast bandwidth, we want to collect some information so we can try to determine why the bandwidth needs to be reduced.
-                        url1 = 'top1' + time.strftime("%Y%m%d-%H%M%S")  + '.txt'
-                        url2 = 'top2' + time.strftime("%Y%m%d-%H%M%S")  + '.txt'
-                        url3 = 'ps' + time.strftime("%Y%m%d-%H%M%S")  + '.txt'
-                        top1 = check_output("top -b -n 1 -1 -c -H -w 512 > html/" + url1, shell=True)
-                        top1 = check_output("top -b -n 1 -1 -c -w 512 > html/" + url2, shell=True)
-                        ps = check_output("ps auxf > html/" + url3, shell=True)
-                        temp = check_output(['vcgencmd', 'measure_temp']).decode('utf-8').split('=')[-1]
-                        freq = check_output(['vcgencmd', 'measure_clock arm']).decode('utf-8').split('=')[-1]
-                        throttled = check_output(['vcgencmd', 'get_throttled']).decode('utf-8').split('=')[-1]
-                        send_text = 'Ward: ' + ward + ' temperature is: ' + temp + ' and CPU freq.: ' + freq + ' with throttled: ' + throttled + '\n\n'
-                        try:
-                            bandwidth = check_output(['speedtest']).decode('utf-8').splitlines(keepends=True)
-                            for line in bandwidth:
-                                if(':' in line and 'URL' not in line):
-                                    send_text += line
-                        except:
-                            send_text += '\n\n !!! BANDWIDTH TEST FAILED !!!'
-
-                        send_text += '\n http://' + socket.gethostname() + '.hos-conf.local/' + url1
-                        send_text += '\n http://' + socket.gethostname() + '.hos-conf.local/' + url2
-                        send_text += '\n http://' + socket.gethostname() + '.hos-conf.local/' + url3
-
-                        if(num_from is not None and num_to is not None):
-                            print(send_text)
-                            sms.send_sms(num_from, num_to, send_text, verbose)
-                        # !!!! END DEBUG CODE !!!!
-
-                        if(broadcast_index >= len(broadcast_stream)): broadcast_index = len(broadcast_stream - 1)
-                        print("Reducing broadcast bandwidth, switching to index " + str(broadcast_index))
-                        try:
-                            if(bandwidth_file is not None):
-                                with open(bandwidth_file, "w") as bandwidthFile:
-                                    bandwidthFile.write(str(broadcast_index))
-                        except:
-                            if(verbose): print(traceback.format_exc())
-                            print("Failure writing bandwidth file")
-                            if(num_from is not None and num_to is not None):
-                                sms.send_sms(num_from, num_to, ward + " had a failure writing the bandwidth file!", verbose)
-                        broadcast_status_length = datetime.now()
-                        if(num_from is not None and num_to is not None):
-                            sms.send_sms(num_from, num_to, ward + " reducing broadcast bandwidth to index " + str(broadcast_index) + "!", verbose)
-                        process_terminate = True
-                        process.terminate()
-                        process.wait()
-                        break;
-                    if(status != 'bad'):
-                        broadcast_status_length = datetime.now()
-                time.sleep(1)
-                # if something is using the camera after the sleep we'll
-                # end up with process.poll() != None and we'll get stuck
-                # in an endless loop here
-                if(not process_terminate and process.poll() is not None):
-                    process_poll_failure += 1
-                    process_poll_clear = 0
-                    if(process_poll_failure > MAX_PROCESS_POLL_FAILURE):
-                        print("!!Main Stream Died, max failure reached, exiting!! (check camera)")
-                        if(num_from is not None and num_to is not None):
-                            sms.send_sms(num_from, num_to, ward + " main stream died, max failure reached, exiting! (check camera)", verbose)
-                        sys.exit("Main Stream max failure reached")
-
-                    print("!!Main Stream Died!! (" + str(process_poll_failure) + ")")
-                    if(num_from is not None and num_to is not None):
-                        sms.send_sms(num_from, num_to, ward + " main stream died! (" + str(process_poll_failure) + ")", verbose)
-                else:
-                    process_poll_clear += 1
-                    if(process_poll_failure > 0 and process_poll_clear > PROCESS_POLL_CLEAR_AFTER):
-                        if(verbose): print("clear process failure")
-                        process_poll_failure = 0
-
-            streaming = False
-          except SystemExit as e:
-              #if we threw a system exit something is wrong bail out
-              sys.exit("Caught system exit")
-          except:
-            if(verbose): print(traceback.format_exc())
-            streaming = False
-            print("Live broadcast failure")
+        try:
+            if(not count_viewers_thrd.is_alive()):
+                print("**Count Viewers Thread Died**")
+                if(num_from is not None and num_to is not None):
+                    sms.send_sms(num_from, num_to, ward + " count viewers thread died.", verbose)
+                print("**Restarting Count Viewers Thread**")
+                count_viewers_thrd = threading.Thread(target = count_viewers.count_viewers, args = (credentials_file, viewers_file, graph_file, youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file, True, googleDoc), name="CountViewerThread")
+                count_viewers_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
+                count_viewers_thrd.start()
+        except:
+            tb = traceback.format_exc()
+            if(verbose): print(tb)
+            gf.log_exception(tb, "failed restarting count viewer thread")
+            print("**Failed restarting count viewer thread**")
             if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, ward + " had a live broadcast failure!", verbose)
-        elif(stream == 0 and streaming == False):
-          try:
-            print("pause stream")
-            if(args.use_ptz):
-                stream_last = stream
-                try:
-                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as paused
-                except:
-                    print("PTZ Problem")
-            streaming = True
-            process = subprocess.Popen(split(ffmpeg_img), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            process_terminate = False
-            # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
-            update_status.update("pause", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
-            while process.poll() is None:
-                stop_time = check_extend(args.extend_file, stop_time, args.status_file, ward, num_from, num_to)
-                if(not os.path.exists(args.control_file) or datetime.now() > stop_time or gf.killer.kill_now):
-                    process_terminate = True
-                    process.terminate()
-                    process.wait()
-                    break;
-                time.sleep(1)
-                # if something is using the camera after the sleep we'll
-                # end up with process.poll() != None and we'll get stuck
-                # in an endless loop here
-                if(not process_terminate and process.poll() is not None):
-                    process_poll_failure += 1
-                    process_poll_clear = 0
-                    if(process_poll_failure > MAX_PROCESS_POLL_FAILURE):
-                        print("!!Pause Stream Died, max failure reached, exiting!!")
-                        if(num_from is not None and num_to is not None):
-                            sms.send_sms(num_from, num_to, ward + " main stream died, max failure reached, exiting!", verbose)
-                        sys.exit("Pause Stream max failure reached")
+                sms.send_sms(num_from, num_to, ward + " failed restarting count viewer thread!", verbose)
+            time.sleep(15) # something has gone wrong here, we need to figure out how to fix this, in the meantime add some delay so we don't spam the error log
 
-                    print("!!Pause Stream Died!! (" + str(process_poll_failure) + ")")
-                    if(num_from is not None and num_to is not None):
-                        sms.send_sms(num_from, num_to, ward + " pause stream died! (" + str(process_poll_failure) + ")", verbose)
-                else:
-                    if(process_poll_clear > PROCESS_POLL_CLEAR_AFTER):
-                        if(verbose): print("clear process failure")
-                        process_poll_failure = 0
+        time.sleep(4.1)
 
-            streaming = False
-          except SystemExit as e:
-              #if we threw a system exit something is wrong bail out
-              sys.exit("Caught system exit")
-          except:
-            if(verbose): print(traceback.format_exc())
-            streaming = False
-            print("Live broadcast failure pause")
-            if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, ward + " had a live broadcast failure while paused!", verbose)
-
-        time.sleep(0.1)
+    try:
+        #if we're force killing this, lets take a look at where the broadcast and count viewers threads are (because we've been having issues with these getting stuck)
+        if(gf.killer.kill_now):
+            frames = sys._current_frames()
+            for thread in threading.enumerate():
+                if thread.name != "MainThread":
+                    frame = frames.get(thread.ident)
+                    if frame:
+                        print(f"Thread '{thread.name}' is at:")
+                        traceback.print_stack(frame)
+    except:
+        tb = traceback.format_exc()
+        if(verbose): print(tb)
+        gf.log_exception(tb, "failed printing current thread location")
+        print("Failed printing current thread location")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed printing current thread location!", verbose)
 
     #moved these to before the ffmpeg test to give local stream time to shutdown
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
@@ -704,6 +655,8 @@ if __name__ == '__main__':
             os.remove(args.control_file)
         if(local_stream_control is not None and os.path.exists(local_stream_control)):
             os.remove(local_stream_control)
+        if(audio_record_control is not None and os.path.exists(audio_record_control)):
+            os.remove(audio_record_control)
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed cleaning up control files")
@@ -741,7 +694,7 @@ if __name__ == '__main__':
         yt.stop_broadcast(youtube, current_id, ward, num_from, num_to, verbose)
 
     # change status back to start so webpage isn't left thinking we're still broadcasting/paused
-    update_status.update("start", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
+    update_status.update("start", start_time, gf.stop_time, args.status_file, ward, num_from, num_to, verbose)
 
     if(not gf.killer.kill_now): # don't wait if we're trying to kill the process now
         # this time while we wait before deleting the video is to allow people
@@ -768,6 +721,62 @@ if __name__ == '__main__':
         if 'email_send' in config:
             email_send = config['email_send']
 
+    uploaded_url = None
+    if(gf.audio_recorded):
+
+        #authenticate with Google Drive API
+        exception = None
+        for retry_num in range(NUM_RETRIES):
+            exception = None
+            tb = None
+            try:
+                google_drive = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'drive', 'v3', verbose)
+            except Exception as exc:
+                exception = exc
+                tb = traceback.format_exc()
+                if(verbose): print(f"!!Google Drive Authentication Failure!! retry({retry_num + 1} of {NUM_RETRIES})")
+                gf.sleep(0.5, 2)
+        if(exception):
+            print(tb)
+            print("Google Drive authentication failure.")
+            if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward Google Drive authentication failure!", verbose)
+        else:
+            try:
+                print("Concatenating MP3 files")
+
+                pattern = re.compile(rf"^{re.escape(mp3_base_filename)}_\d{{4}}-\d{{2}}-\d{{2}}_\d{{2}}-\d{{2}}-\d{{2}}\.mp3$")
+                mp3_files = sorted(f for f in os.listdir(mp3_base_path) if f.endswith(".mp3") and pattern.match(f))
+                if(verbose): print(mp3_files)
+
+                with open(mp3_base_path + "/mp3_file_list", "w") as f:
+                    for mp3 in mp3_files:
+                        f.write(f"file '{os.path.join(mp3_base_path, mp3)}'\n")
+
+                outputfile = f"{mp3_base_filename}_{datetime.now().strftime('%Y-%m-%d')}.mp3"
+
+                subprocess.run(["ffmpeg", "-f", "concat", "-safe", "0", "-i", mp3_base_path + "/mp3_file_list", "-c", "copy", outputfile],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE)
+
+                if(os.path.exists(outputfile)):
+                    uploaded_url = yt.upload_to_drive(google_drive, ward, outputfile, num_from, num_to, verbose)
+
+                    print("Cleaning up temporary MP3 files")
+                    for mp3 in mp3_files:
+                        os.remove(os.path.join(mp3_base_path, mp3))
+                    os.remove(mp3_base_path + "/mp3_file_list")
+                else:
+                    print(f"No MP3 Files Concatinated")
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, ward + " no MP3 files concatinated!", verbose)
+            except:
+                tb = traceback.format_exc()
+                if(verbose): print(tb)
+                gf.log_exception(tb, "failed concatenating MP3 files")
+                print("Failed concatenating MP3 files")
+                if(num_from is not None and num_to is not None):
+                    sms.send_sms(num_from, num_to, ward + " failed concatenating MP3 files!", verbose)
+
     # testing automation scripts can generate emails with invalid data
     # and a number of those email can be generated, look for a control
     # file and don't send emails if control file is present
@@ -776,10 +785,10 @@ if __name__ == '__main__':
         print("e-mail concurrent viewer file")
         if(args.email_from is not None and args.email_to is not None):
             count_viewers.write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
-            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), uploaded_url, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
 
     if(googleDoc is not None):
-        sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
+        sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, current_id, ward, num_from, num_to, verbose)
         sheet.update_cell(gf.GD_VIEWS_ROW,column, "Views = " + str(numViewers))
 
     # schedule video deletion task
@@ -793,6 +802,10 @@ if __name__ == '__main__':
             os.remove(args.control_file)
         if(local_stream_control is not None and os.path.exists(local_stream_control)):
             os.remove(local_stream_control)
+        if(audio_record_control is not None and os.path.exists(audio_record_control)):
+            os.remove(audio_record_control)
+        if(os.path.exists("mp3_play_list")):
+            os.remove("mp3_play_list")
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed cleaning up control files")
@@ -813,7 +826,7 @@ if __name__ == '__main__':
     ps_aux = check_output(['ps', 'aux']).decode('utf-8')
     if 'ffmpeg' in ps_aux:
         # ffmpeg is still running, we don't want to handle this here, so just send a notification
-        print("ffmpeg still running from current broadcast.")
+        print(f"ffmpeg still running from current broadcast {ward} ward.")
         if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward ffmpeg still running from current broadcast!", verbose)
 
     check_report_missed_sms(ward, num_from, num_to, verbose)
@@ -826,8 +839,8 @@ if __name__ == '__main__':
 
   except:
     if(verbose): print(traceback.format_exc())
-    gf.log_exception(traceback.format_exc(), "crashed out of broadcast.py")
-    print("Crashed out of broadcast.py")
+    gf.log_exception(traceback.format_exc(), f"crashed out of broadcast.py : {ward} ward")
+    print(f"Crashed out of broadcast.py : {ward} ward")
     check_report_missed_sms(ward, num_from, num_to, verbose)
     if(num_from is not None and num_to is not None):
         sms.send_sms(num_from, num_to, ward + " crashed out of broadcast.py!", verbose)    

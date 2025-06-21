@@ -14,6 +14,8 @@ pts_status_retries = 3
 ptz_sms_sent = 0
 ptz_sms_max = 5
 
+stop_time = None
+
 sms_fifo = []
 sms_missed = 0
 
@@ -23,6 +25,8 @@ stream_event = threading.Event()
 stream_event_terminate = threading.Event()
 
 current_id = None
+
+audio_recorded = False
 
 def sleep(min_timeout = 0.1, max_timeout = 2):
     time.sleep(random.uniform(min_timeout, max_timeout))

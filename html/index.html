@@ -1,70 +1,74 @@
 <!DOCTYPE html>
 <html>
 
-  <head>
+<head>
     <title>Broadcast Control</title>
 
     <link rel="stylesheet" href="reset.css?hash=202011290945" />
     <link rel="stylesheet" href="main.css?hash=202011290945" />
 
-    <script src="jquery-3.5.1.min.js"></script>
+    <!--<script src="jquery-3.5.1.min.js"></script>-->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+        integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     <script src="control.js?hash=202011290945"></script>
 
     <link rel="icon" href="broadcast.png" />
-  </head>
+</head>
 
-  <body>
+<body>
 
     <div id="content">
-      <div id="previewcontainer">
-	<img id="preview" src="camera.jpg" />
-	<div id="previewbutton">Preview</div>
-	<div id="viewers">Viewers ( 0 )</div>
-      </div>
-      <div id="previewbuffer"></div>
-      <div id="title">Broadcast Control</div>
+        <div id="previewcontainer">
+            <img id="preview" src="camera.jpg" />
+            <div id="previewbutton">Preview</div>
+            <div id="viewers">Viewers ( 0 )</div>
+        </div>
+        <div id="previewbuffer"></div>
+        <div id="title">Broadcast Control</div>
 
-      <div class="status"><span id="statusText">Retrieving status...</span></div>
-      <div class="status"><span id="statusText2">&nbsp;</span></div>
-      <div class="status">&nbsp;</div>
+        <div class="status"><span id="statusText">Retrieving status...</span></div>
+        <div class="status"><span id="statusText2">&nbsp;</span></div>
+        <div class="status">&nbsp;</div>
 
-      <div id="control">
-        <button id="pauseResume"></button>
-	<button id="extend">+5 min</button>
+        <div id="control">
+            <button id="pauseResume"></button>
+            <button id="extend">+5 min</button>
 
-	<div id="bandwidth" class="dropdown">
-          <div class="label"><span class="chevron">&#x25BC;</span>Bandwidth</div>
-	  <div class="bandwidth option" bandwidth="0">Standard</div>
-	  <div class="bandwidth option" bandwidth="1">Low</div>
-	  <div class="bandwidth option" bandwidth="2">Audio Only</div>
-	</div>
+            <button id="startStopRecord"></button>
 
-	<div id="presets" class="dropdown">
-          <div class="label"><span class="chevron">&#x25BC;</span>Presets</div>
-	  <div class="preset option" preset="1">Walk In</div>
-	  <div class="preset option" preset="2">Broadcast</div>
-	  <div class="preset option" preset="3">Stand</div>
-	  <div class="preset option" preset="4">Stand Right</div>
-	  <div class="preset option" preset="5">Stand Left</div>
-	  <div class="preset option" preset="6">Pulpit</div>
-	  <div class="preset option" preset="7">Blessing</div>
-	  <div class="preset option" preset="10">Speaker Short</div>
-	  <div class="preset option" preset="11">Speaker Med</div>
-	  <div class="preset option" preset="12">Speaker Tall</div>
-	  <div class="preset option" preset="20">Chorister</div>
-	  <div class="preset option" preset="21">Choir</div>
-	  <div class="preset option" preset="22">Organist</div>
-	  <div class="preset option" preset="23">Pianist</div>
-	  <div class="preset option" preset="24">Violinist</div>
-	  <div class="preset option" preset="25">Cellist</div>
-	  <div class="preset option" preset="30">Chalkboard</div>
-	  <div class="preset option" preset="245">Screen</div>
-	  <div class="preset option" preset="250">"Off"</div>
-	  <div class="rehome option">Rehome</div>
-	</div>
+            <div id="bandwidth" class="dropdown">
+                <div class="label"><span class="chevron">&#x25BC;</span>Bandwidth</div>
+                <div class="bandwidth option" bandwidth="0">Standard</div>
+                <div class="bandwidth option" bandwidth="1">Low</div>
+                <div class="bandwidth option" bandwidth="2">Audio Only</div>
+            </div>
 
-      </div>
+            <div id="presets" class="dropdown">
+                <div class="label"><span class="chevron">&#x25BC;</span>Presets</div>
+                <div class="preset option" preset="101">Walk In</div>
+                <div class="preset option" preset="102">Broadcast</div>
+                <div class="preset option" preset="103">Stand</div>
+                <div class="preset option" preset="104">Stand Right</div>
+                <div class="preset option" preset="105">Stand Left</div>
+                <div class="preset option" preset="106">Pulpit</div>
+                <div class="preset option" preset="107">Blessing</div>
+                <div class="preset option" preset="110">Speaker Short</div>
+                <div class="preset option" preset="111">Speaker Med</div>
+                <div class="preset option" preset="112">Speaker Tall</div>
+                <div class="preset option" preset="120">Chorister</div>
+                <div class="preset option" preset="121">Choir</div>
+                <div class="preset option" preset="122">Organist</div>
+                <div class="preset option" preset="123">Pianist</div>
+                <div class="preset option" preset="124">Violinist</div>
+                <div class="preset option" preset="125">Cellist</div>
+                <div class="preset option" preset="130">Chalkboard</div>
+                <div class="preset option" preset="245">Screen</div>
+                <div class="preset option" preset="250">"Off"</div>
+                <div class="rehome option">Rehome</div>
+            </div>
+
+        </div>
     </div>
-  </body>
+</body>
 
 </html>

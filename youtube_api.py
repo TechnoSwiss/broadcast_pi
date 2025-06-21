@@ -424,8 +424,9 @@ def next_available_row(sheet, column, cols_to_sample=1):
     next_row = gf.GD_TOTAL_ROW + 1
   return next_row
 
-def get_sheet_row_and_column(googleDoc, videoID, ward, num_from = None, num_to = None, verbose = None):
-    client = gspread.authorize(google_auth.get_credentials_google_drive(ward, num_from, num_to, verbose))
+def get_sheet_row_and_column(credentials_file, googleDoc, videoID, ward, num_from = None, num_to = None, verbose = None):
+    #client = gspread.authorize(google_auth.get_credentials_google_drive(ward, num_from, num_to, verbose))
+    client = gspread.authorize(google_auth.get_credentials_google_sheets(credentials_file, ward, num_from, num_to))
     sheet = client.open(googleDoc).worksheet(ward)
     try:
         column = sheet.find(videoID)
@@ -448,6 +449,30 @@ def get_sheet_row_and_column(googleDoc, videoID, ward, num_from = None, num_to =
 
     return sheet, column, insert_row
 
+def upload_to_drive(google_drive, ward, mp3_file, num_from = None, num_to = None, verbose = False):
+    try:
+        file_metadata = {'name': os.path.basename(mp3_file)}
+        media = MediaFileUpload(mp3_file, mimetype='audio/mpeg')
+
+        file = google_drive.files().create(body=file_metadata, media_body=media, fields='id').execute()
+        google_drive.permissions().create(fileId=file['id'], body={'type': 'anyone', 'role': 'reader'}).execute()
+
+    except:
+        tb = traceback.format_exc()
+        if(verbose): print(tb)
+        gf.log_exception(tb, "failed to upload audio file")
+        print("Failed to upload audio file")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to upload audio file!", verbose)
+        return (f"Upload of audio file failed")
+
+    uploaded_url = f"https://drive.google.com/uc?id={file['id']}&export=download"
+    print(f"Uploaded: {uploaded_url}")
+    return (uploaded_url)
+
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='YouTube API Interaction')
     parser.add_argument('-w','--ward',type=str,required=True,help='Name of Ward being broadcast')
@@ -455,6 +480,7 @@ if __name__ == '__main__':
     parser.add_argument('-n','--thumbnail',type=str,default='thumbnail.jpg',help='Path and filename for the JPG image that will be the video thumbnail')
     parser.add_argument('-t','--run-time',type=str,default='1:10:00',help='Broadcast runtime in HH:MM:SS')
     parser.add_argument('-C','--current-id',type=str,help='YouTube Video ID for the current broadcast')
+    parser.add_argument('--mp3-file',type=str,help='Filename of MP3 file to upload')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
@@ -463,16 +489,18 @@ if __name__ == '__main__':
     credentials_file = args.ward.lower() + '.auth'
 
     #authenticate with YouTube API
-    youtube = google_auth.get_authenticated_service(credentials_file, args)
+    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', args.verbose)
+    google_drive = google_auth.get_authenticated_service(credentials_file, args.ward, args.num_from, args.num_to, 'drive', 'v3', args.verbose)
 
     #print(create_stream(youtube, args.ward))
     #print(get_broadcasts(youtube, args.ward))
     #create_live_event(youtube, args.title, starttime, args.run_time, args.thumbnail, args.ward, None, None, True, None, True)
     #print(get_next_broadcast(youtube, args.ward))
-    #print(get_broadcast_status(youtube, args.video_id, args.ward))
+    #print(get_broadcast_status(youtube, args.current_id, args.ward))
     #print(get_live_broadcast(youtube, args.ward))
     #print(get_stream(youtube, args.ward, None, None, 1))
-    print(get_stream(youtube, args.ward))
+    #print(get_stream(youtube, args.ward))
     #bind_broadcast(youtube, args.video_id, "VY-K6BTl3Wjxg61zO9-s0A1599607954801518", args.ward)
     #stop_broadcast(youtube, "5Xngi_F9UIk", args.ward)
     #print(get_concurrent_viewers(youtube, args.video_id, args.ward))
+    print(upload_to_drive(google_drive, args.ward, f"{os.path.abspath(os.path.dirname(__file__))}/{args.mp3_file}", args.num_from, args.num_to, args.verbose))

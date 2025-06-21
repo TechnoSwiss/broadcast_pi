@@ -118,7 +118,7 @@ if __name__ == '__main__':
     start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, broadcast_date, args.ward, args.num_from, args.num_to, args.verbose)
 
     #authenticate with YouTube API
-    youtube = google_auth.get_authenticated_service(credentials_file, args)
+    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', args.verbose)
 
     # normally we are only binding videos just before we're ready to send the 
     # stream to them, this allows us to control which broadcast is getting the

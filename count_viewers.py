@@ -69,9 +69,9 @@ def write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to write viewer image!", verbose)
 
-def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, statusFile = None, googleDoc = None):
+def write_output(credentials_file, outFile, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, statusFile = None, googleDoc = None):
     if(googleDoc is not None):
-        sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, videoID, ward, num_from, num_to, verbose)
+        sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, videoID, ward, num_from, num_to, verbose)
 
     if(verbose): print("Monitoring viewers...")
     start_time = time.monotonic()
@@ -106,9 +106,19 @@ def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None
                 except Exception as exc:
                     exception = exc
                     tb = traceback.format_exc()
-                    if(verbose): print('!!Write Google Doc Retry!!')
-                    # token for writing to Google doc only lasts 60 min., then we have to call get_sheet_row_and_column again to renew it
-                    sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, videoID, ward, num_from, num_to, verbose)
+                if(exception is not None):
+                    try:
+                        if(verbose): print('!!Write Google Doc Retry!!')
+                        # token for writing to Google doc only lasts 60 min., then we have to call get_sheet_row_and_column again to renew it
+                        sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, videoID, ward, num_from, num_to, verbose)
+                    except:
+                        tb = traceback.format_exc()
+                        if(verbose): print(tb)
+                        if(verbose): print('Write Google Doc Retry failed to renew token!!')
+                        gf.log_exception(tb, "failed to renew Google Doc token on retry")
+                if(num_from is not None and num_to is not None):
+                    sms.send_sms(num_from, num_to, ward + " failed to renew Google Doc token on retry!", verbose)
+
 
               if exception:
                 if(verbose): print(tb)
@@ -129,15 +139,15 @@ def write_output(outFile, youtube, videoID, ward, num_from = None, num_to = None
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to write current viewers!", verbose)
 
-def count_viewers(viewers_file, graph_file, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, status = None, append = False, googleDoc = None):
+def count_viewers(credentials_file, viewers_file, graph_file, youtube, videoID, ward, num_from = None, num_to = None, verbose = False, extended = False, status = None, append = False, googleDoc = None):
     try:
         with open(viewers_file, 'a' if append else 'w') as outFile:
             # status file is used by the browser app to show number of current viewers
             if(status is not None):
                 with open(status, 'w') as statusFile:
-                    write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, statusFile, googleDoc)
+                    write_output(credentials_file, outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, statusFile, googleDoc)
             else:
-                write_output(outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, None, googleDoc)
+                write_output(credentials_file, outFile, youtube, videoID, ward, num_from, num_to, verbose, extended, None, googleDoc)
         if(not gf.killer.kill_now):
             write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
     except:
@@ -187,6 +197,7 @@ if __name__ == '__main__':
     email_send = args.email_send
     recurring = False
     googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
+    uploaded_url = None # need to figure out if this exists, or at least accept it as an option
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
 
@@ -258,9 +269,9 @@ if __name__ == '__main__':
 
 
     #authenticate with YouTube API
-    youtube = google_auth.get_authenticated_service(credentials_file, args)
+    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', args.verbose)
 
-    count = threading.Thread(target = count_viewers, args = (viewers_file, graph_file, youtube, current_id, ward, args.num_from, args.num_to, args.verbose, args.extended, None, args.append, googleDoc))
+    count = threading.Thread(target = count_viewers, args = (credentials_file, viewers_file, graph_file, youtube, current_id, ward, args.num_from, args.num_to, args.verbose, args.extended, None, args.append, googleDoc))
     count.start()
     count.join()
 
@@ -272,10 +283,10 @@ if __name__ == '__main__':
     numViewers = yt.get_view_count(youtube, current_id, ward, args.num_from, args.num_to, args.verbose)
     if(not gf.killer.kill_now and email_send):
         if(args.email_from is not None and args.email_to is not None):
-            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), uploaded_url, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
 
     if(googleDoc is not None):
-        sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, args.num_from, args.num_to, args.verbose)
+        sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, current_id, ward, args.num_from, args.num_to, args.verbose)
         sheet.update_cell(gf.GD_VIEWS_ROW,column, "Views = " + str(numViewers))
 
     # don't run video deletion if we Ctrl+C out of the process

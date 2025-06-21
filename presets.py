@@ -11,6 +11,7 @@ import threading
 import json
 
 from visca_over_ip.camera import *
+from visca_over_ip.exceptions import NoQueryResponse
 
 import sms # sms.py local file
 import global_file as gf
@@ -38,6 +39,9 @@ def set_preset(ward, cam_ip, preset_file, preset, update_all = False, num_from =
         if(os.path.exists(preset_file)):
             with open(preset_file, "r") as presetFile:
                 presets = json.load(presetFile)
+        else:
+            print("Presets file doesn't exist")
+            return
     except:
         if(verbose): print(traceback.format_exc())
         print("Error reading preset file")
@@ -127,6 +131,9 @@ def record_presets(ward, cam_ip, preset_file, num_from = None, num_to = None, ve
         if(os.path.exists(preset_file)):
             with open(preset_file, "r") as presetFile:
                 presets = json.load(presetFile)
+        else:
+            print("Presets file doesn't exist")
+            return
     except:
         if(verbose): print(traceback.format_exc())
         print("Error reading preset file")
@@ -263,7 +270,7 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
                         if(preset != last_preset):
                             print(preset_name)
                 if(preset != last_preset and preset is None):
-                    print("Undefined")
+                    if(last_preset != -1): print("Undefined Preset")
                     preset = -1
 
             if(preset_status_file is not None):
@@ -278,19 +285,25 @@ def report_preset(delay, ward, cam_ip, preset_file, preset_status_file, num_from
             gf.ptz_last_status = time.monotonic()
 
             time.sleep(1)
-        except:
-            if(verbose): print(traceback.format_exc())
-            print("Failure getting camera PTZ position")
+        except NoQueryResponse:
             # camera status seems to get a lot of failures even with it having built-in retries
-            # the status however isn't very important, but we would like to get notified if there's
-            # a constant issue, however typically what happens is it sends out a few text messages
-            # but everything self corrects. Ideally we only get an SMS if there's a real issue that's
-            # not resolving itself. Updating this so that it only sends out an SMS if updates continue
-            # to fail over a given period of time (ie only message is status isn't updated for more then 1 min)
+            # this status however doesn't appear to be important and it appears to eventually succeed
+            # unsure if this is a camera issue or a network issue, don't think it's a script issue
+            # spent a fair amount of time tracking this down without any luck, so for now just going
+            # to catch it by itself and silently continue
+            if(verbose): print("Failure getting camera PTZ position")
             if(gf.ptz_last_status is not None and (time.monotonic() - gf.ptz_last_status) > PTZ_STATUS_UPDATE_TIMEOUT_SMS):
-                gf.ptz_last_status = time.monotonic() # reset timeout so that we don't get contant message if the next status update fails
-                if(num_from is not None and num_to is not None):
-                    sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
+                gf.ptz_last_status = time.monotonic() # reset timeout
+                #if(num_from is not None and num_to is not None):
+                #    sms.send_sms(num_from, num_to, ward + " had a failure getting camera PTZ position!", verbose)
+            time.sleep(1)
+        except:
+            tb = traceback.format_exc()
+            if(verbose): print(tb)
+            gf.log_exception(tb, "Failure getting camera PTZ position")
+            print("Failure getting camera PTZ position")
+            if(num_from is not None and num_to is not None):
+                sms.send_sms(num_from, num_to, ward + " failure getting camera PTZ position!", verbose)
             time.sleep(1)
 
     ptz_cam.close_connection()
@@ -300,7 +313,7 @@ if __name__ == '__main__':
     parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
     parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
     parser.add_argument('-p','--pc-name',type=str,help='System name that script is running on.')
-    parser.add_argument('--preset-file',type=str,help='JSON file where camera presets are stored.')
+    parser.add_argument('--preset-file',default=None,type=str,help='JSON file where camera presets are stored.')
     parser.add_argument('--record-presets',default=False,action='store_true',help='Updates preset positions in preset-file')
     parser.add_argument('--set-presets',default=False,action='store_true',help='Updates preset positions from preset-file to camera')
     parser.add_argument('--set-preset',type=int,help='Set camera preset to value from preset-file')
@@ -319,7 +332,7 @@ if __name__ == '__main__':
             # check for keys in config file
             if 'broadcast_ward' in config:
                 args.ward = config['broadcast_ward']
-            if 'preset_file' in config:
+            if 'preset_file' in config and args.preset_file is None:
                 args.preset_file = config['preset_file']
             if 'source_rtsp_stream' in config:
                 args.rtsp_stream = config['source_rtsp_stream']

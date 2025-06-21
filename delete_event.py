@@ -28,7 +28,7 @@ def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_del
         if(args.ward is not None):
             deletion_command = deletion_command + ' -w ' + args.ward
         if(args.title is not None):
-            deletion_command = deletion_command + ' -i \\"' + args.title + '\\"'
+            deletion_command = deletion_command + ' -i \\"' + args.title.replace("\'", "\\\'") + '\\"'
         if(args.status_file is not None):
             deletion_command = deletion_command + ' -S ' + args.status_file
         if(args.thumbnail is not None):
@@ -77,7 +77,11 @@ def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_del
 
         deletion_command = deletion_command + ' --broadcast-time \\"' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '\\"'
 
-        if(args.verbose) : print(deletion_command)
+        if run_deletion_time < datetime.now():
+            run_deletion_time = datetime.now() + timedelta(seconds=30)
+            if(args.verbose): print(f"Delete time is in the past, setting new deletion time to {run_deletion_time.strftime('%H:%M %Y-%m-%d')}")
+
+        if(args.verbose) : print(deletion_command.replace('\\"', '"'))
         ps = subprocess.Popen(split(deletion_command), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         subprocess.run(["at", run_deletion_time.strftime("%H:%M %Y-%m-%d")], stdin=ps.stdout)
         ps.wait()
@@ -125,6 +129,7 @@ if __name__ == '__main__':
     current_id = args.current_id
     insert_next_broadcast = args.insert_next_broadcast
     email_send = args.email_send
+    broadcast_day = None
     googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
@@ -205,6 +210,9 @@ if __name__ == '__main__':
                 num_from = config['notification_text_from']
             if 'notification_text_to' in config:
                 num_to = config['notification_text_to']
+    else:
+        print("!!Config file was specified, but none found!!")
+        exit()
 
     if(ward is None):
         print("!!Ward is a required argument!!")
@@ -219,9 +227,8 @@ if __name__ == '__main__':
 
     credentials_file = ward.lower() + '.auth'
 
-
     #authenticate with YouTube API
-    youtube = google_auth.get_authenticated_service(credentials_file, args)
+    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', verbose)
 
     try:
         # if current_id isn't defined, we can't delete that video
@@ -242,7 +249,7 @@ if __name__ == '__main__':
                 else:
                     if(verbose): print("email_from or email_to argument is None")
             if(googleDoc is not None):
-                sheet, column, insert_row = yt.get_sheet_row_and_column(googleDoc, current_id, ward, num_from, num_to, verbose)
+                sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, current_id, ward, num_from, num_to, verbose)
                 sheet.update_cell(gf.GD_TOTAL_ROW,column, "Total Views = " + str(numViewers))
     except:
         # if we hit an exception here, then there might be data missing for this broadcast,

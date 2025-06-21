@@ -103,7 +103,7 @@ def send_total_views(email_from, email_to, ward, total_views, total_previous_vie
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to send final viewers!", verbose)
 
-def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views, broadcast_time = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
+def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views, broadcast_time = None, uploaded_url = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
     try:
         if(verbose): print("creating concurrent viewers file email")
         sender_domain = email_from.split('@')[-1]
@@ -124,7 +124,7 @@ def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views
         #msgAlternative = MIMEMultipart('alternative')
         #msgRoot.attach(msgAlternative)
 
-        msg.attach(MIMEText("There were " + str(total_views) + " view(s) reported by YouTube.\nFor breakdown of concurrent viewers during broadcast,\nplease open the attached file in a spreadsheet app. (Excel/Google Docs).", 'plain'))
+        msg.attach(MIMEText("There were " + str(total_views) + " view(s) reported by YouTube.\nFor breakdown of concurrent viewers during broadcast,\nplease open the attached file in a spreadsheet app. (Excel/Google Docs)." + ("" if uploaded_url is None else f"\n\nAn audio recording of this broadcast was generated,\nand is available at {uploaded_url}.\nPLEASE DOWNLOAD this file now as it will only be available online for 6 days."), 'plain'))
 
         with open(csv_file) as fp:
             attachment = MIMEText(fp.read(), _subtype='csv')
@@ -297,7 +297,7 @@ if __name__ == '__main__':
         count_viewers.write_viewer_image(args.viewers_file, args.image_file, ward, num_from, num_to, verbose)
 
     if(args.viewers_file is not None and args.image_file is not None):
-        send_viewer_file(args.viewers_file, args.image_file, args.email_from, args.email_to, ward, args.num_viewers, broadcast_time, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+        send_viewer_file(args.viewers_file, args.image_file, args.email_from, args.email_to, ward, args.num_viewers, broadcast_time, None, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
         if(delete_current and args.current_id is not None):
             if(args.verbose) : print("Setup event deletion")
             run_deletion_time = broadcast_time + timedelta(minutes=int(args.delay_after))
