@@ -115,7 +115,7 @@ body {
     content: "\23F9  Stop Rec";
 }
 
-#title, .status {
+#title, .status, .info {
     text-align: center;
     font-size: 10vmin;
     line-height: 15vmin;
@@ -124,6 +124,11 @@ body {
 .status {
     font-size: 5vmin;
     line-height: 5vmin;
+}
+
+.info {
+    font-size: 2vmin;
+    line-height: 4vmin;
 }
 
 #statusText2 {

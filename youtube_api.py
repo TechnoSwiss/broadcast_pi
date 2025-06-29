@@ -486,21 +486,33 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    credentials_file = args.ward.lower() + '.auth'
+    ward = args.ward
+    title = args.title
+    thumbnail = args.thumbnail
+    run_time = args.run_time
+    current_id = args.current_id
+    mp3_file = args.mp3_file
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
+
+    credentials_file = ward.lower() + '.auth'
 
     #authenticate with YouTube API
-    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', args.verbose)
-    google_drive = google_auth.get_authenticated_service(credentials_file, args.ward, args.num_from, args.num_to, 'drive', 'v3', args.verbose)
+    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', verbose)
+    google_drive = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'drive', 'v3', verbose)
 
-    #print(create_stream(youtube, args.ward))
-    #print(get_broadcasts(youtube, args.ward))
-    #create_live_event(youtube, args.title, starttime, args.run_time, args.thumbnail, args.ward, None, None, True, None, True)
-    #print(get_next_broadcast(youtube, args.ward))
-    #print(get_broadcast_status(youtube, args.current_id, args.ward))
-    #print(get_live_broadcast(youtube, args.ward))
-    #print(get_stream(youtube, args.ward, None, None, 1))
-    #print(get_stream(youtube, args.ward))
-    #bind_broadcast(youtube, args.video_id, "VY-K6BTl3Wjxg61zO9-s0A1599607954801518", args.ward)
-    #stop_broadcast(youtube, "5Xngi_F9UIk", args.ward)
-    #print(get_concurrent_viewers(youtube, args.video_id, args.ward))
-    print(upload_to_drive(google_drive, args.ward, f"{os.path.abspath(os.path.dirname(__file__))}/{args.mp3_file}", args.num_from, args.num_to, args.verbose))
+    #print(create_stream(youtube, ward))
+    #print(get_broadcasts(youtube, ward))
+    #create_live_event(youtube, title, starttime, run_time, thumbnail, ward, None, None, True, None, True)
+    #print(get_next_broadcast(youtube, ward))
+    #print(get_broadcast_status(youtube, current_id, ward))
+    #print(get_live_broadcast(youtube, ward))
+    #print(get_stream(youtube, ward, None, None, 1))
+    #print(get_stream(youtube, ward))
+    #bind_broadcast(youtube, video_id, "VY-K6BTl3Wjxg61zO9-s0A1599607954801518", ward)
+    #stop_broadcast(youtube, "5Xngi_F9UIk", ward)
+    #print(get_concurrent_viewers(youtube, video_id, ward))
+    #print(upload_to_drive(google_drive, ward, f"{os.path.abspath(os.path.dirname(__file__))}/{mp3_file}", num_from, num_to, verbose))
+    status, status_description = get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
+    if(verbose or status == 'bad'): print(f"Status : {status}" + ("" if status_description == "" else f" => {status_description}"))

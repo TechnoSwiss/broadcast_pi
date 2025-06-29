@@ -479,6 +479,16 @@ if __name__ == '__main__':
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed checking for other broadcasts!", verbose)
 
+    # at this point no other instance of ffmpeg should be running, unless we crashed out of broadcast and left ffmpeg
+    # instances running (usually happens with a 'double free or corruption (!prev)' error, check for those and clearn now
+    for line in os.popen("ps aux | grep ffmpeg | grep -v grep"):
+        fields = line.split()
+        pid = fields[1]
+        os.kill(int(pid), signal.SIGKILL)
+        print("left over ffmpeg still running with pid : " + pid + " killing process")
+        if(num_from is not None):
+            sms.send_sms(num_from, num_to, ward +  " Ward left over ffmpeg still running with pid : " + pid + "! Killing process.", verbose)
+
     #authenticate with YouTube API
     exception = None
     for retry_num in range(NUM_RETRIES):
@@ -518,7 +528,7 @@ if __name__ == '__main__':
     update_link.update_live_broadcast_link(current_id, args, ward, args.html_filename, args.url_filename)
 
     # check if we have music defined to play during the pause
-    pause_audio_cmd = "-f lavfi -i anullsrc"
+    pause_audio_cmd = "-re -f lavfi -i anullsrc"
     if(pause_music is not None):
         print("Pause music defined, create list")
         random.shuffle(pause_music)
@@ -546,8 +556,8 @@ if __name__ == '__main__':
     #kick off broadcast
     ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
     ffmpeg_lbw = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters_lbw + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 1024k -maxrate 1024k -bufsize 2048k -strict experimental -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if camera_parameters_lbw is not None else ffmpeg
-    ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -framerate 4 -loop 1 -i ' + audio_only_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=12:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=185" -g 2 -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if audio_only_image is not None else ffmpeg
-    ffmpeg_img = 'ffmpeg -thread_queue_size 2048 ' + pause_audio_cmd + ' -thread_queue_size 2048 -framerate 4 -loop 1 -i ' + args.pause_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=56:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=835" -g 2' + (' -acodec aac -ar 44100 -b:a 128k -ac 1 -shortest ' if pause_music is not None else ' ') + '-f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
+    ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -loop 1 -framerate 4 -i ' + audio_only_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=12:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=185" -g 2 -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if audio_only_image is not None else ffmpeg
+    ffmpeg_img = 'ffmpeg -thread_queue_size 2048 ' + pause_audio_cmd + ' -thread_queue_size 2048 -loop 1 -framerate 4 -i ' + args.pause_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=56:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=835" -g 2' + (' -acodec aac -ar 44100 -b:a 128k -ac 1 -shortest ' if pause_music is not None else ' ') + '-f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
 
     broadcast_stream = [ffmpeg, ffmpeg_lbw, ffmpeg_audio]
     broadcast_downgrade_delay = [2, 4, 4] # how long to we wait before step from one broadcast stream to the next?
@@ -612,13 +622,15 @@ if __name__ == '__main__':
 
         try:
             if(not count_viewers_thrd.is_alive()):
-                print("**Count Viewers Thread Died**")
-                if(num_from is not None and num_to is not None):
-                    sms.send_sms(num_from, num_to, ward + " count viewers thread died.", verbose)
-                print("**Restarting Count Viewers Thread**")
-                count_viewers_thrd = threading.Thread(target = count_viewers.count_viewers, args = (credentials_file, viewers_file, graph_file, youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file, True, googleDoc), name="CountViewerThread")
-                count_viewers_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
-                count_viewers_thrd.start()
+                # if broadcast status is "complete" then the Count Viewers Thread will immediatly return as complete (and no longer be alive)
+                if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to, verbose) != "complete"):
+                    print("**Count Viewers Thread Died**")
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, ward + " count viewers thread died.", verbose)
+                    print("**Restarting Count Viewers Thread**")
+                    count_viewers_thrd = threading.Thread(target = count_viewers.count_viewers, args = (credentials_file, viewers_file, graph_file, youtube, current_id, ward, num_from, num_to, verbose, args.extended, broadcast_watching_file, True, googleDoc), name="CountViewerThread")
+                    count_viewers_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
+                    count_viewers_thrd.start()
         except:
             tb = traceback.format_exc()
             if(verbose): print(tb)
