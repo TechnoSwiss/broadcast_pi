@@ -3,6 +3,7 @@
 import argparse
 import os
 import traceback
+import subprocess
 
 from subprocess import Popen, check_output, PIPE
 from datetime import datetime, timedelta
@@ -53,15 +54,14 @@ if __name__ == '__main__':
     except:
             send_text += '\n\n !!! BANDWIDTH TEST FAILED !!!'
 
+    CAMERA_IP = '192.168.108.9'
     try:
-        CAMERA_IP = '192.168.108.9'
-        ping_task = Popen(['ping', '-c', '2', CAMERA_IP], stdout=PIPE)
-        ping_results = check_output(['grep', '-v', 'rtt'], stdin=ping_task.stdout).decode('utf-8')
-        ping_task.wait()
-        send_text += '\n\nPTZ Camera : ' + ('Pass' if ' 0% packet loss' in ping_results  else '!!FAILED!!')
-    except:
-        if(args.verbose): print(traceback.format_exc())
-        send_text += '\n\n !!! CAMERA PING FAILED !!!'
+        result = subprocess.run(['ping', '-c', '2', '-W', '2', CAMERA_IP], capture_output=True, text=True)
+        status = 'Pass' if ' 0% packet loss' in result.stdout else '!!FAILED!!'
+    except Exception as e:
+        if(args.verbose): print(f"Exception: {e}")
+        status = f'!!! CAMERA PING FAILED !!!'
+    send_text += f'\n\nPTZ Camera : {status}'
 
     if(args.num_from is not None and args.num_to is not None):
         print(send_text)

@@ -7,6 +7,7 @@ import os
 import traceback
 import subprocess 
 import time
+import requests
 
 
 class GracefulKiller:
@@ -41,7 +42,10 @@ if __name__ == '__main__':
         for preset in presets:
             if(killer.kill_now): break;
             print("Calling preset: " + preset)
-            subprocess.run(["curl", preset])
+            try:
+                requests.get(preset, timeout=5)
+            except requests.RequestException as e:
+                print("PTZ Problem:", e)
             for i in range(10):
                 sys.stdout.write(str(i + 1) + ' ')
                 sys.stdout.flush()
@@ -49,4 +53,7 @@ if __name__ == '__main__':
                 if(killer.kill_now): break;
             print('\n')
 
-    subprocess.run(["curl", "http://192.168.108.9/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"])
+    try:
+        requests.get(f"http://192.168.108.9/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250", timeout=5)
+    except requests.RequestException as e:
+        print("PTZ Problem:", e)

@@ -18,6 +18,7 @@ import time
 import threading
 import json
 import random
+import requests
 
 from subprocess import check_output
 import socket
@@ -131,7 +132,7 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
             if((datetime.now() - start_verify) > timedelta(minutes=START_DELAY)):
                 if(not start_failure_sms_sent):
                     start_failure_sms_sent = True
-                    print("Broadcast has failed to start within " + str(START_DELAY))
+                    print(f"Broadcast has failed to start within {str(START_DELAY)} minute(s)")
                     if(num_from is not None and num_to is not None):
                         sms.send_sms(num_from, num_to, ward + " broadcast has failed to start!", verbose)
         if(live_id is not None and live_id != current_id):
@@ -150,6 +151,7 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
     print("Live broadcast ID has been verified.")
 
 if __name__ == '__main__':
+  config_file = None
   verbose = False
   num_from = None
   num_to = None
@@ -202,6 +204,13 @@ if __name__ == '__main__':
     gf.killer = GracefulKiller()
     signal.signal(signal.SIGSEGV, signal_segfault)
 
+    faulthandler_file = os.path.join(os.path.abspath(os.path.dirname(__file__)), "logs", "fault.log")
+    try:
+        os.makedirs(os.path.dirname(faulthandler_file), exist_ok=True)  # Ensure directory exists
+        faulthandler.enable(open(faulthandler_file, 'w'))
+    except Exception as e:
+        print(f"Failed to open faulthandler file {faulthandler_file}: {e}")
+
     if "INVOCATION_ID" in os.environ:
         print("Started by systemd.")
     else:
@@ -222,6 +231,7 @@ if __name__ == '__main__':
     email_send = True # sets if emails will be sent out
     email_url_addresses = [] # email addresses to sent randomized URL to
     description = None
+    camera_ip = None
     bandwidth_file = None
     broadcast_watching_file = None
     broadcast_reset_file = None
@@ -465,29 +475,25 @@ if __name__ == '__main__':
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed removing existing MP3 files!", verbose)
 
-    try:
-        current_instance = f"broadcast@{os.path.basename(config_file)}.service"
-        instances = get_active_instances("broadcast@")
-        if len(instances) > 1:
-            print(f"Found running instances: {instances}")
-            stop_other_instances("broadcast@", exclude_instance=current_instance)
-    except:
-        tb = traceback.format_exc()
-        if(verbose): print(tb)
-        gf.log_exception(tb, "failed checking for other active broadcasts")
-        print("Failed checking for other active broadcasts")
-        if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed checking for other broadcasts!", verbose)
+    # if we happen to be calling this without a config file, then we won't test for other instances
+    if(config_file):
+        try:
+            current_instance = f"broadcast@{os.path.basename(config_file)}.service"
+            instances = get_active_instances("broadcast@")
+            if len(instances) > 1:
+                print(f"Found running instances: {instances}")
+                stop_other_instances("broadcast@", exclude_instance=current_instance)
+        except:
+            tb = traceback.format_exc()
+            if(verbose): print(tb)
+            gf.log_exception(tb, "failed checking for other active broadcasts")
+            print("Failed checking for other active broadcasts")
+            if(num_from is not None and num_to is not None):
+                sms.send_sms(num_from, num_to, ward + " failed checking for other broadcasts!", verbose)
 
     # at this point no other instance of ffmpeg should be running, unless we crashed out of broadcast and left ffmpeg
     # instances running (usually happens with a 'double free or corruption (!prev)' error, check for those and clearn now
-    for line in os.popen("ps aux | grep ffmpeg | grep -v grep"):
-        fields = line.split()
-        pid = fields[1]
-        os.kill(int(pid), signal.SIGKILL)
-        print("left over ffmpeg still running with pid : " + pid + " killing process")
-        if(num_from is not None):
-            sms.send_sms(num_from, num_to, ward +  " Ward left over ffmpeg still running with pid : " + pid + "! Killing process.", verbose)
+    gf.kill_ffmpeg(ward, args.youtube_key, num_from, num_to, verbose)
 
     #authenticate with YouTube API
     exception = None
@@ -604,13 +610,16 @@ if __name__ == '__main__':
     while(datetime.now() < gf.stop_time and not gf.killer.kill_now):
         try:
             if(not broadcast_thrd.is_alive()):
-                print("**Broadcast Thread Died**")
-                if(num_from is not None and num_to is not None):
-                    sms.send_sms(num_from, num_to, ward + " broadcast thread died.", verbose)
-                print("**Restarting Broadcast Thread**")
-                broadcast_thrd = threading.Thread(target = bt.broadcast, args = (youtube, current_id, start_time, ward, camera_ip, broadcast_stream, broadcast_downgrade_delay, bandwidth_file, ffmpeg_img, audio_record, audio_record_control, num_from, num_to, args, verbose), name="BroadcastThread")
-                broadcast_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
-                broadcast_thrd.start()
+                # if broadcast status is "complete" then the Broadcast Thread will immediatly return as complete (and no longer be alive)
+                if(yt.get_broadcast_status(youtube, current_id, ward, num_from, num_to, verbose) != "complete"):
+                    print("**Broadcast Thread Died**")
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, ward + " broadcast thread died.", verbose)
+                    print("**Restarting Broadcast Thread**")
+                    broadcast_thrd = threading.Thread(target = bt.broadcast, args = (youtube, current_id, start_time, ward, camera_ip, broadcast_stream, broadcast_downgrade_delay, bandwidth_file, ffmpeg_img, audio_record, audio_record_control, num_from, num_to, args, verbose), name="BroadcastThread")
+                    broadcast_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
+                    broadcast_thrd.start()
+                    gf.sleep(2, 5)  # short backoff
         except:
             tb = traceback.format_exc()
             if(verbose): print(tb)
@@ -618,12 +627,12 @@ if __name__ == '__main__':
             print("**Failed restarting broadcast thread**")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed restarting broadcast thread!", verbose)
-            time.sleep(15) # something has gone wrong here, we need to figure out how to fix this, in the meantime add some delay so we don't spam the error log
+            gf.sleep(10, 15) # something has gone wrong here, we need to figure out how to fix this, in the meantime add some delay so we don't spam the error log
 
         try:
             if(not count_viewers_thrd.is_alive()):
                 # if broadcast status is "complete" then the Count Viewers Thread will immediatly return as complete (and no longer be alive)
-                if(yt.get_broadcast_status(youtube, videoID, ward, num_from, num_to, verbose) != "complete"):
+                if(yt.get_broadcast_status(youtube, current_id, ward, num_from, num_to, verbose) != "complete"):
                     print("**Count Viewers Thread Died**")
                     if(num_from is not None and num_to is not None):
                         sms.send_sms(num_from, num_to, ward + " count viewers thread died.", verbose)
@@ -638,9 +647,9 @@ if __name__ == '__main__':
             print("**Failed restarting count viewer thread**")
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed restarting count viewer thread!", verbose)
-            time.sleep(15) # something has gone wrong here, we need to figure out how to fix this, in the meantime add some delay so we don't spam the error log
+            gf.sleep(10, 15) # something has gone wrong here, we need to figure out how to fix this, in the meantime add some delay so we don't spam the error log
 
-        time.sleep(4.1)
+        gf.sleep(3, 6)
 
     try:
         #if we're force killing this, lets take a look at where the broadcast and count viewers threads are (because we've been having issues with these getting stuck)
@@ -687,7 +696,10 @@ if __name__ == '__main__':
     # because there are multiples running only worry about this if it's
     # a force kill, not normal finished time
     if(args.use_ptz and not gf.killer.kill_now):
-        subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as stopped
+        try:
+            requests.get(f"http://{camera_ip}/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250", timeout=5)
+        except requests.RequestException as e:
+            print("PTZ Problem:", e)
 
     # stop the local_stream thread if it's running
     # move this to later in the script so camera as time to face the back wall
@@ -703,7 +715,12 @@ if __name__ == '__main__':
     # we'll need to manually stop the broadcast on youtube studio
     if(not gf.killer.kill_now):
         print("Stopping YT broadcast...")
-        yt.stop_broadcast(youtube, current_id, ward, num_from, num_to, verbose)
+        if(yt.get_broadcast_status(youtube, current_id, ward, num_from, num_to, verbose) != "complete"):
+            yt.stop_broadcast(youtube, current_id, ward, num_from, num_to, verbose)
+        else:
+            print("Broadcast already stopped!")
+            if(num_from is not None and num_to is not None):
+                sms.send_sms(num_from, num_to, ward + " YouTube broadcast was already stopped!", verbose)
 
     # change status back to start so webpage isn't left thinking we're still broadcasting/paused
     update_status.update("start", start_time, gf.stop_time, args.status_file, ward, num_from, num_to, verbose)

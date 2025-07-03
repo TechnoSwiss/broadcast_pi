@@ -1,8 +1,13 @@
+import os
+import signal
 import random
 import time
 import threading
+import psutil
 
 from datetime import datetime
+
+import sms # sms.py local file
 
 killer = None
 
@@ -32,16 +37,29 @@ def sleep(min_timeout = 0.1, max_timeout = 2):
     time.sleep(random.uniform(min_timeout, max_timeout))
     return
 
+def kill_ffmpeg(calling_process, ward, youtube_key, num_from = None, num_to = None, verbose = None):
+    for p in psutil.process_iter(attrs=['pid', 'cmdline']):
+        try:
+            if 'ffmpeg' in p.info['cmdline'] and youtube_key in ' '.join(p.info['cmdline']):
+                os.kill(p.info['pid'], signal.SIGKILL)
+                print(f"Killed ffmpeg (PID: {p.info['pid']}) from {calling_process}.")
+                if(num_from and num_to):
+                    sms.send_sms(num_from, num_to, f"{ward} Ward ffmpeg, PID: {p.info['pid']} killed from {calling_process}.", verbose)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
 def log_exception(exception: str, message: str):
     if(save_exceptions_to_file):
         while global_lock.locked():
             sleep(0.01, 0.1)
             continue
 
-        global_lock.acquire()
-
-        with open("exception_error", 'a') as write_error:
-            write_error.write("\n\n" + message + datetime.now().strftime(" %m/%d/%Y, %H:%M:%S\n"))
-            write_error.write(exception)
-
-        global_lock.release()
+        with global_lock:
+            exception_file = os.path.join(os.path.abspath(os.path.dirname(__file__)), "logs", "exception_error")
+            try:
+                os.makedirs(os.path.dirname(exception_file), exist_ok=True)  # Ensure directory exists
+                with open(exception_file, 'a') as write_error:
+                    write_error.write("\n\n" + message + datetime.now().strftime(" %m/%d/%Y, %H:%M:%S\n"))
+                    write_error.write(exception)
+            except Exception as e:
+                print(f"Failed to open exception file {exception_file}: {e}")

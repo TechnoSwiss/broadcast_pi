@@ -4,9 +4,12 @@ import argparse
 import os
 import traceback
 import sys
+import time
 import datetime as dt
 import dateutil.parser # pip install python-dateutil
 from dateutil import tz # pip install python-dateutil
+
+from datetime import datetime
 
 import googleapiclient.discovery
 import googleapiclient.errors
@@ -190,7 +193,7 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
                 tb = traceback.format_exc()
                 if(verbose): print('!!Get Broadcasts Retry!!')
                 gf.sleep(1,3)
-                
+
         if exception:
             if(verbose): print(tb)
             gf.log_exception(tb, "failed to get list of broadcasts")
@@ -198,14 +201,17 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " failed to get list of broadcasts!", verbose)
             return(None)
-        
+
         if(len(list_broadcasts['items']) > 0 and 'nextPageToken' in list_broadcasts.keys()):
             nextPage = list_broadcasts['nextPageToken']
         else:
             nextPage = None
 
         for video in list_broadcasts['items']:
-            videos[video['id']] = video['status']['lifeCycleStatus']
+            if 'id' in video and 'status' in video and 'lifeCycleStatus' in video['status']:
+                videos[video['id']] = video['status']['lifeCycleStatus']
+            else:
+                if verbose: print(f"Skipping broadcast item missing 'status' or 'lifeCycleStatus': {video}")
 
     return(videos)
 
@@ -236,17 +242,28 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None,
         return(None)
 
 def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
+    healthStatus = ""
+    description = ""
     exception = None
     for retry_num in range(NUM_RETRIES):
         exception = None
         tb = None
         try:
-            stream = youtube.liveStreams().list(
-                part='status',
-                mine=True
+            broadcast_details = youtube.liveBroadcasts().list(
+                part='contentDetails',
+                id=videoID
             ).execute()
-            healthStatus = stream['items'][0]['status']['healthStatus']['status']
-            description = stream['items'][0]['status']['healthStatus']['configurationIssues'][0]['description'] if 'configurationIssues' in stream['items'][0]['status']['healthStatus'] else ""
+
+            stream_id = broadcast_details['items'][0]['contentDetails'].get('boundStreamId')
+
+            if(stream_id):
+                stream = youtube.liveStreams().list(
+                    part='status',
+                    id=stream_id
+                ).execute()
+
+                healthStatus = stream['items'][0]['status']['healthStatus']['status']
+                description = stream['items'][0]['status']['healthStatus']['configurationIssues'][0]['description'] if 'configurationIssues' in stream['items'][0]['status']['healthStatus'] else ""
             return(healthStatus, description)
         except Exception as exc:
             exception = exc
@@ -260,7 +277,7 @@ def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None,
         print("Failed to get broadcast health")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to get broadcast health!", verbose)
-        return("", "")
+        return(healthStatus, description)
 
 def create_stream(youtube, ward, num_from = None, num_to = None, verbose = False, stream_name = 'Default'):
     try:
@@ -343,10 +360,18 @@ def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbo
                 part='snippet,status'
             ).execute()
             break
+        except HttpError as exc:
+            exception = exc
+            if exc.resp.status == 403 and 'redundantTransition' in str(exc):
+                print("!!Broadcast already stopped (redundant transition).!!")
+                return
+            tb = traceback.format_exc()
+            if(verbose): print(f"!!Stop Broadcast Retry!! retry({retry_num + 1})")
+            gf.sleep(1, 3)
         except Exception as exc:
             exception = exc
             tb = traceback.format_exc()
-            if(verbose): print('!!Stop Broadcast Retry!!')
+            if(verbose): print(f"!!Stop Broadcast Retry!! retry({retry_num + 1})")
             gf.sleep(1, 3)
 
     if exception:
@@ -358,6 +383,7 @@ def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbo
 
 # Gets the current number of viewers of the video specified by videoID, so those numbers can be reported out
 def get_view_count(youtube, videoID, ward, num_from = None, num_to = None, verbose = False):
+    totalViews = -1
     for retry_num in range(NUM_RETRIES):
         exception = None
         tb = None
@@ -366,11 +392,15 @@ def get_view_count(youtube, videoID, ward, num_from = None, num_to = None, verbo
                 part='statistics',
                 id=videoID
             ).execute()
-            if('viewCount' in videoDetails['items'][0]['statistics']):
-                totalViews = int(videoDetails['items'][0]['statistics']['viewCount'])
+            if videoDetails.get('items'):
+                if('viewCount' in videoDetails['items'][0]['statistics']):
+                    totalViews = int(videoDetails['items'][0]['statistics']['viewCount'])
+                else:
+                    totalViews = 0
+                break
             else:
-                totalViews = 0
-            break
+                if(verbose): print('!!Concurrent Viewers Retry!!')
+                gf.sleep(1, 3)
         except Exception as exc:
             exception = exc
             tb = traceback.format_exc()
@@ -514,5 +544,7 @@ if __name__ == '__main__':
     #stop_broadcast(youtube, "5Xngi_F9UIk", ward)
     #print(get_concurrent_viewers(youtube, video_id, ward))
     #print(upload_to_drive(google_drive, ward, f"{os.path.abspath(os.path.dirname(__file__))}/{mp3_file}", num_from, num_to, verbose))
-    status, status_description = get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
-    if(verbose or status == 'bad'): print(f"Status : {status}" + ("" if status_description == "" else f" => {status_description}"))
+    while True:
+        status, status_description = get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
+        if(verbose or status == 'bad'): print(f"[{datetime.now().strftime('%H:%M:%S')}] Status : {status}" + ("" if status_description == "" else f" => {status_description}"))
+        time.sleep(2)

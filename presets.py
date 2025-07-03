@@ -9,6 +9,7 @@ import subprocess
 import time
 import threading
 import json
+import requests
 
 from visca_over_ip.camera import *
 from visca_over_ip.exceptions import NoQueryResponse
@@ -155,7 +156,11 @@ def record_presets(ward, cam_ip, preset_file, num_from = None, num_to = None, ve
     for preset_name in presets:
         print("Finding coordinates for preset " + preset_name)
         # run through each preset and find it's coordinates
-        subprocess.run(["curl", "http://" + cam_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&" + str(presets[preset_name]['preset'])], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            requests.get(f"http://{cam_ip}/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&{str(presets[preset_name]['preset'])}", timeout=5)
+        except requests.RequestException as e:
+            pass
+            #print("PTZ Problem:", e)
         last_pan = None
         last_tilt = None
         last_zoom = None

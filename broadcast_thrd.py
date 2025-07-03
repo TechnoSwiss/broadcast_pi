@@ -8,6 +8,7 @@ import time
 import signal
 import psutil # sudo apt install python3-psutil
 import threading
+import requests
 
 from subprocess import check_output
 from collections import deque
@@ -25,7 +26,8 @@ import global_file as gf # local file for sharing globals between files
 
 EXTEND_TIME_INCREMENT = 5
 MAX_PROCESS_POLL_FAILURE = 3
-PROCESS_POLL_CLEAR_AFTER = 5
+NO_DATA_TIMEOUT_SEC = 10
+YOUTUBE_RECEIVING_SEC = 10
 
 extend_time = 0 # keep track of extend time so we can cap it if needed
 
@@ -86,20 +88,49 @@ def log_ffmpeg_process_tree(process):
     except Exception as e:
         print(f"Could not fetch process tree: {e}")
 
-def handle_poll_failure(process, process_terminate, poll_failure, poll_clear, index, audio_index, ward, stream_type, num_from=None, num_to=None, verbose=False):
+def handle_poll_failure(process, process_terminate, poll_failure, index, audio_index, ward, stream_type, stderr_buffer,num_from=None, num_to=None, verbose=False):
     try:
         if not process_terminate and process.poll() is not None:
+            exit_code = process.poll()
+            print(f"⚠️ {stream_type} stream exited with code: {exit_code}")
+
             err_output = "\n".join(stderr_buffer).lower()
+            poll_failure += 1
+
+            if(exit_code == -15): # this is SIGTERM and means we requested the process stop
+                return poll_failure, index
+            #elif(exit_code == -9): # this is SIGKILL and means we forced the process stop, which means we're likely trying to trigger an event below
+            else:
+                stderr_summary = "🔍 Last 5 stderr lines before poll failure:\n"
+                stderr_summary += '\n'.join("   " + line.strip() for line in list(stderr_buffer)[-5:])
+                if(verbose): print(stderr_summary)
+                gf.log_exception(stderr_summary, "ffmpeg poll failure context")
 
             if "invalid data" in err_output:
                 print("!!Issue with data from camera!!")
-                if audio_index is not None:
-                    index = audio_index
                 if num_from and num_to:
                     sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} issue with data from camera!", verbose)
 
-            poll_failure += 1
-            poll_clear = 0
+            if "connection timed out" in err_output:
+                print("!!Connection to camera timed out!!")
+                if num_from and num_to:
+                    sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} connection to camera timeout!", verbose)
+
+            if "no route to host" in err_output:
+                print("!!Network issue reaching camera!!")
+                if num_from and num_to:
+                    sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} network issue reaching camera!", verbose)
+
+            # if broadcast is dying then issue is most likely with the camera not streaming data to YouTube
+            # I've seen that happen for the specific issues tested for above, but also with no discernable reason in the ffmpeg output
+            if audio_index and index != audio_index:
+                if poll_failure > 1:
+                    poll_failure = 0
+                    print("!!forcing broadcast to audio only!!")
+                    index = audio_index
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, ward + " forcing broadcast to audio only!", verbose)
+
             if poll_failure > MAX_PROCESS_POLL_FAILURE:
                 print(f"!!{stream_type} Stream Died, max failure reached, exiting!!")
                 if num_from and num_to:
@@ -109,12 +140,6 @@ def handle_poll_failure(process, process_terminate, poll_failure, poll_clear, in
                 print(f"!!{stream_type} Stream Died!! ({poll_failure})")
                 if num_from and num_to:
                     sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} stream died! ({poll_failure})", verbose)
-        else:
-            poll_clear += 1
-            if poll_failure > 0 and poll_clear > PROCESS_POLL_CLEAR_AFTER:
-                if verbose:
-                    print("clear process failure")
-                poll_failure = 0
     except:
         tb = traceback.format_exc()
         if verbose: print(tb)
@@ -123,30 +148,64 @@ def handle_poll_failure(process, process_terminate, poll_failure, poll_clear, in
         if num_from and num_to:
             sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} exception in poll failure handler!", verbose)
 
-    return poll_failure, poll_clear, index
+    return poll_failure, index
 
-def drain_stderr(pipe, buffer, verbose=False):
+def drain_stderr(pipe, buffer, verbose=False, log_filename=None):
+    log_file = None
+
+    if pipe is None:
+        if(verbose): print("stderr pipe is None, skipping drain_stderr")
+        return
+
+    # Attempt to open the log file if a path is provided
+    if log_filename:
+        logfile_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), log_filename)
+        try:
+            os.makedirs(os.path.dirname(logfile_path), exist_ok=True)  # Ensure directory exists
+            log_file = open(logfile_path, "a", buffering=1)
+        except Exception as e:
+            if verbose: print(f"Failed to open log file {logfile_path}: {e}")
+            log_file = None
+
     try:
         for line in iter(pipe.readline, b''):
             decoded = line.decode(errors='ignore').strip()
             if decoded:
                 buffer.append(decoded)
-    except Exception as e:
-        print(f"stderr reader error: {e}")
+                if log_file:
+                    try:
+                        log_file.write(decoded + "\n")
+                        log_file.flush()
+                    except Exception as e:
+                        if verbose: print(f"Error writing to log file: {e}")
+    except:
+        print(f"stderr reader error")
+        tb = traceback.format_exc()
+        if(verbose): print(tb)
+        gf.log_exception(tb, f"stderr reader error")
+    finally:
+        if log_file:
+            try:
+                log_file.close()
+            except Exception as e:
+                if verbose: print(f"Error closing log file: {e}")
+
 
 def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream, broadcast_downgrade_delay, bandwidth_file, ffmpeg_img, audio_record, audio_record_control, num_from, num_to, args, verbose):
     process = None
     streaming = False
+    youtube_receiving = False
     stream_last = 0
     broadcast_index = 0
     broadcast_index_new = 0
     broadcast_status_length = datetime.now()
     broadcast_status_check = datetime.now()
     process_poll_failure = 0
-    process_poll_clear = 0
     ffmpeg_record_audio = False
     ffmpeg_record_audio_last = None
     broadcast_stream_final = list(broadcast_stream)
+    log_filename = None
+    cam_present = False
 
     while(datetime.now() < gf.stop_time and not gf.killer.kill_now):
         try:
@@ -181,25 +240,38 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
 
         # at this point no other instance of ffmpeg should be running, other than the one for the web preview
         # if we find any that are sending data to YouTube we need to kill them so we don't end up with a double ingestion error
-        for p in psutil.process_iter(attrs=['pid', 'cmdline']):
-            try:
-                if 'ffmpeg' in p.info['cmdline'] and args.youtube_key in ' '.join(p.info['cmdline']):
-                    os.kill(p.info['pid'], signal.SIGKILL)
-                    print(f"Killed stray ffmpeg (PID: {p.info['pid']}) pushing to YouTube.")
-                    if num_from:
-                        sms.send_sms(num_from, num_to, f"{ward} Ward killed stray ffmpeg, PID: {p.info['pid']}.", verbose)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
+        gf.kill_ffmpeg("broadcast_thrd", ward, args.youtube_key, num_from, num_to, verbose)
 
         if(stream == 1 and streaming == False):
           try:
             print(f"main stream {'with' if ffmpeg_record_audio else 'without'} audio recording")
-            if(args.use_ptz and stream_last == 0):
+            if(args.use_ptz):
+                try:
+                    result = subprocess.run(['ping', '-c', '2', '-W', '2', camera_ip], capture_output=True, text=True)
+                    cam_present = True if ' 0% packet loss' in result.stdout else False
+                except Exception as e:
+                    cam_present = False
+                if(not cam_present):
+                    print("!!Camera not responding!!")
+                    broadcast_index = (len(broadcast_stream_final) - 1)
+                    print("!!Forcing Audio Only Broadcast!!")
+                    if num_from and num_to:
+                        sms.send_sms(num_from, num_to, f"{ward} camera not responding, forcing audio only broadcast!", verbose)
+                    try:
+                        if(bandwidth_file is not None):
+                            with open(bandwidth_file, "w") as bandwidthFile:
+                                bandwidthFile.write(str(broadcast_index))
+                    except:
+                        if(verbose): print(traceback.format_exc())
+                        print("Failure writing bandwidth file in camera not responding")
+                        if(num_from is not None and num_to is not None):
+                            sms.send_sms(num_from, num_to, ward + " had a failure writing the bandwidth file in camera not responding!", verbose)
+            if(cam_present and stream_last == 0):
                 stream_last = stream
                 try:
-                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&102"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at pulpit before streaming
-                except:
-                    print("PTZ Problem")
+                    requests.get(f"http://{camera_ip}/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&102", timeout=5)
+                except requests.RequestException as e:
+                    print("PTZ Problem:", e)
                 time.sleep(3) # wait for camera to get in position before streaming, hand count for this is about 3 seconds.
             streaming = True
             if broadcast_index is None or broadcast_index >= len(broadcast_stream_final):
@@ -207,8 +279,11 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
                 broadcast_index = 0
             stderr_buffer = deque(maxlen=1000)
             process = subprocess.Popen(split(broadcast_stream_final[broadcast_index]), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, preexec_fn=os.setsid)
-            stderr_thread = threading.Thread(target=drain_stderr, args=(process.stderr, stderr_buffer, verbose), daemon=True)
+            youtube_receiving = False
+            #log_filename = f"logs/ffmpeg_main_{datetime.now():%Y%m%d-%H%M%S}.log"
+            stderr_thread = threading.Thread(target=drain_stderr, args=(process.stderr, stderr_buffer, verbose, log_filename), daemon=True)
             stderr_thread.start()
+            broadcast_status_length = datetime.now()
             if(verbose): print(f"Spawned PID: {process.pid}")
             process_terminate = False
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
@@ -240,6 +315,7 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
                             if(broadcast_index_new < len(broadcast_stream_final) and broadcast_index_new >= 0):
                                 if(broadcast_index != broadcast_index_new):
                                     broadcast_index = broadcast_index_new
+                                    poll_failure = 0 # if we're changing the broadcast_index, lets reset the poll_failure counter as well
                                     print("Setting broadcast to index " + str(broadcast_index))
                                     process_terminate = True
                                     safe_kill_ffmpeg(process, ward, num_from, num_to, verbose)
@@ -252,6 +328,16 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
                     print("Failure reading bandwidth file")
                     if(num_from is not None and num_to is not None):
                         sms.send_sms(num_from, num_to, ward + " had a failure reading the bandwidth file!", verbose)
+                if(not youtube_receiving and (datetime.now() - broadcast_status_check) > timedelta(seconds=2)):
+                    status, status_description = yt.get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
+                    if(verbose or status != 'good'): print(f"Status : {status}" + ("" if status_description == "" else f" => {status_description}"))
+                    broadcast_status_check = datetime.now()
+                    if(status == 'noData' and (datetime.now() - broadcast_status_length) > timedelta(seconds=NO_DATA_TIMEOUT_SEC)):
+                        gf.kill_ffmpeg("broadcast_thrd_main", ward, args.youtube_key, num_from, num_to, verbose)
+                        broadcast_status_length = datetime.now()
+                    elif(status != 'noData' and  (datetime.now() - broadcast_status_length) > timedelta(seconds=YOUTUBE_RECEIVING_SEC)):
+                        youtube_receiving = True
+                        broadcast_status_length = datetime.now()
                 # if we're already at the lowest bandwidth broadcast there's no reason to keep checking to see if we need to reduce bandwidth
                 if(broadcast_index < (len(broadcast_stream_final) - 1) and (datetime.now() - broadcast_status_check) > timedelta(minutes=1)):
                     # every minute grab the broadcast status so we can reduce the bandwidth if there's problems
@@ -262,7 +348,7 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
                         current_id = gf.current_id
                     status, status_description = yt.get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
                     broadcast_status_check = datetime.now()
-                    if(verbose or status == 'bad'): print(f"Status : {status}" + ("" if status_description == "" else f" => {status_description}"))
+                    if(verbose or status != 'good'): print(f"Status : {status}" + ("" if status_description == "" else f" => {status_description}"))
                     # if for some reason we have multiple streams going into YouTube kill this stream to reset the system
                     if("More than one ingestion" in status_description):
                         print("!!Multiple streams being ingested by YouTube, resetting!!")
@@ -273,8 +359,12 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
                         safe_kill_ffmpeg(process, ward, num_from, num_to, verbose)
                         process = None
                         break
+                    if(status == 'noData' and (datetime.now() - broadcast_status_length) > timedelta(seconds=NO_DATA_TIMEOUT_SEC)):
+                        gf.kill_ffmpeg("broadcast_thrd_main", ward, args.youtube_key, num_from, num_to, verbose)
+                        broadcast_status_length = datetime.now()
                     if(status == 'bad' and (datetime.now() - broadcast_status_length) > timedelta(minutes=broadcast_downgrade_delay[broadcast_index])):
                         broadcast_index += 1
+                        poll_failure = 0 # if we're changing the broadcast_index, lets reset the poll_failure counter as well
                         # !!!! START DEBUG CODE !!!!
                         # if we're going to reduce the broadcast bandwidth, we want to collect some information so we can try to determine why the bandwidth needs to be reduced.
                         os.makedirs("html/debug", exist_ok=True)
@@ -324,21 +414,21 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
                         safe_kill_ffmpeg(process, ward, num_from, num_to, verbose)
                         process = None
                         break
-                    if(status != 'bad'):
+                    if(status != 'bad' and status != 'noData'):
                         broadcast_status_length = datetime.now()
                 time.sleep(1)
                 # if something is using the camera after the sleep we'll
                 # end up with process.poll() != None and we'll get stuck
                 # in an endless loop here
-                process_poll_failure, process_poll_clear, broadcast_index_tmp = handle_poll_failure(
+                process_poll_failure, broadcast_index_tmp = handle_poll_failure(
                     process,
                     process_terminate,
                     process_poll_failure,
-                    process_poll_clear,
                     broadcast_index,
                     (len(broadcast_stream_final) - 1),
                     ward,
                     stream_type="Main",
+                    stderr_buffer=stderr_buffer,
                     num_from=num_from,
                     num_to=num_to,
                     verbose=verbose
@@ -374,14 +464,21 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
         elif(stream == 0 and streaming == False):
           try:
             print("pause stream")
-            if(args.use_ptz):
+            if(cam_present):
                 stream_last = stream
                 try:
-                    subprocess.run(["curl", "http://" + camera_ip + "/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # point camera at wall to signal streaming as paused
-                except:
-                    print("PTZ Problem")
+                    requests.get(f"http://{camera_ip}/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&250", timeout=5)
+                except requests.RequestException as e:
+                    print("PTZ Problem:", e)
             streaming = True
-            process = subprocess.Popen(split(ffmpeg_img), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+            stderr_buffer = deque(maxlen=1000)
+            process = subprocess.Popen(split(ffmpeg_img), shell=False, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, preexec_fn=os.setsid)
+            youtube_receiving = False
+            #log_filename = f"logs/ffmpeg_pause_{datetime.now():%Y%m%d-%H%M%S}.log"
+            stderr_thread = threading.Thread(target=drain_stderr, args=(process.stderr, stderr_buffer, verbose, log_filename), daemon=True)
+            stderr_thread.start()
+            broadcast_status_length = datetime.now()
+            if(verbose): print(f"Spawned PID: {process.pid}")
             process_terminate = False
             # update status file with current start/stop times (there may be multiple wards in this file, so read/write out any that don't match current ward
             update_status.update("pause", start_time, gf.stop_time, args.status_file, ward, num_from, num_to, verbose)
@@ -393,11 +490,21 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
                     safe_kill_ffmpeg(process, ward, num_from, num_to, verbose)
                     process = None
                     break
+                if(not youtube_receiving and (datetime.now() - broadcast_status_check) > timedelta(seconds=2)):
+                    status, status_description = yt.get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
+                    if(verbose or status != 'good'): print(f"Status : {status}" + ("" if status_description == "" else f" => {status_description}"))
+                    broadcast_status_check = datetime.now()
+                    if(status == 'noData' and (datetime.now() - broadcast_status_length) > timedelta(seconds=NO_DATA_TIMEOUT_SEC)):
+                        gf.kill_ffmpeg("broadcast_thrd_main", ward, args.youtube_key, num_from, num_to, verbose)
+                        broadcast_status_length = datetime.now()
+                    elif(status != 'noData' and  (datetime.now() - broadcast_status_length) > timedelta(seconds=YOUTUBE_RECEIVING_SEC)):
+                        youtube_receiving = True
+                        broadcast_status_length = datetime.now()
                 if((datetime.now() - broadcast_status_check) > timedelta(minutes=1)):
-                    # every minute grab the broadcast status so we can reduce the bandwidth if there's problems
+                    # every minute grab the broadcast status so we can act on any issues
                     status, status_description = yt.get_broadcast_health(youtube, current_id, ward, num_from, num_to, verbose)
                     broadcast_status_check = datetime.now()
-                    if(verbose or status == 'bad'): print(f"Status : {status}" + ("" if status_description == "" else f" => {status_description}"))
+                    if(verbose or status != 'good'): print(f"Status : {status}" + ("" if status_description == "" else f" => {status_description}"))
                     # if for some reason we have multiple streams going into YouTube kill this stream to reset the system
                     if("More than one ingestion" in status_description):
                         print("!!Multiple streams being ingested by YouTube, resetting!!")
@@ -408,21 +515,24 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
                         safe_kill_ffmpeg(process, ward, num_from, num_to, verbose)
                         process = None
                         break
-                    if(status != 'bad'):
+                    if(status == 'noData' and (datetime.now() - broadcast_status_length) > timedelta(seconds=NO_DATA_TIMEOUT_SEC)):
+                        gf.kill_ffmpeg("broadcast_thrd_pause", ward, args.youtube_key, num_from, num_to, verbose)
+                        broadcast_status_length = datetime.now()
+                    if(status != 'bad' and status != 'noData'):
                         broadcast_status_length = datetime.now()
                 time.sleep(1)
                 # if something is using the camera after the sleep we'll
                 # end up with process.poll() != None and we'll get stuck
                 # in an endless loop here
-                process_poll_failure, process_poll_clear, broadcast_index = handle_poll_failure(
+                process_poll_failure, broadcast_index = handle_poll_failure(
                     process,
                     process_terminate,
                     process_poll_failure,
-                    process_poll_clear,
                     broadcast_index,
                     None, # audio_only index
                     ward,
                     stream_type="Pause",
+                    stderr_buffer=stderr_buffer,
                     num_from=num_from,
                     num_to=num_to,
                     verbose=verbose
