@@ -13,6 +13,7 @@ from datetime import datetime
 
 import googleapiclient.discovery
 import googleapiclient.errors
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 import google_auth # google_auth.py local file

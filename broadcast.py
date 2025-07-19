@@ -73,6 +73,12 @@ def signal_segfault(sig, frame):
 #   os._exit(1) 
     sys.exit("Caught SegFault, exit and handle notification and restart from outside script")
 
+def signal_abort(sig, frame):
+    print("\n!!Received SIGABRT!!")
+    faulthandler.dump_traceback(file=faulthandler_log, all_threads=True)
+    faulthandler_log.flush()
+    sys.exit("Caught SIGABRT, exiting.")
+
 def get_active_instances(service_template_prefix):
     try:
         output = subprocess.check_output(
@@ -203,11 +209,15 @@ if __name__ == '__main__':
 
     gf.killer = GracefulKiller()
     signal.signal(signal.SIGSEGV, signal_segfault)
+    signal.signal(signal.SIGABRT, signal_abort)
 
     faulthandler_file = os.path.join(os.path.abspath(os.path.dirname(__file__)), "logs", "fault.log")
     try:
         os.makedirs(os.path.dirname(faulthandler_file), exist_ok=True)  # Ensure directory exists
-        faulthandler.enable(open(faulthandler_file, 'w'))
+        faulthandler_log = open(faulthandler_file, 'a')  # Use append mode to avoid overwriting logs
+
+        # Keep this file handle OPEN for the entire process lifetime!
+        faulthandler.enable(file=faulthandler_log)
     except Exception as e:
         print(f"Failed to open faulthandler file {faulthandler_file}: {e}")
 
@@ -872,4 +882,12 @@ if __name__ == '__main__':
     print(f"Crashed out of broadcast.py : {ward} ward")
     check_report_missed_sms(ward, num_from, num_to, verbose)
     if(num_from is not None and num_to is not None):
-        sms.send_sms(num_from, num_to, ward + " crashed out of broadcast.py!", verbose)    
+        sms.send_sms(num_from, num_to, ward + " crashed out of broadcast.py!", verbose)
+
+  finally:
+    if faulthandler_log:
+        try:
+            faulthandler.disable()   # Important: disable first
+            faulthandler_log.close()
+        except Exception as e:
+            print(f"Failed to close faulthandler log: {e}")
