@@ -93,6 +93,48 @@ def log_diagnostics_to_sheet(ward, pc_name, googleDoc, diagnostics, failures_str
     # Insert new data in second row (index=3), pushing down older data
     sheet.insert_row(row, index=3, value_input_option='USER_ENTERED')
 
+    FORMULAS = {
+        'C2': '=AVERAGE(FILTER(C3:C, ISNUMBER(C3:C)))',
+        'E2': '=AVERAGE(FILTER(E3:E, ISNUMBER(E3:E)))',
+        'F2': '=AVERAGE(FILTER(F3:F, ISNUMBER(F3:F)))',
+        'G2': '=AVERAGE(FILTER(G3:G, ISNUMBER(G3:G)))',
+        'H2': '=AVERAGE(FILTER(H3:H, ISNUMBER(H3:H)))',
+        'I2': '=AVERAGE(FILTER(I3:I, ISNUMBER(I3:I)))',
+        'J2': '=AVERAGE(FILTER(J3:J, ISNUMBER(J3:J)))',
+        'M2': '=AVERAGE(FILTER(M3:M, ISNUMBER(M3:M)))',
+        'N2': '=AVERAGE(FILTER(N3:N, ISNUMBER(N3:N)))',
+        'O2': '=AVERAGE(FILTER(O3:O, ISNUMBER(O3:O)))',
+        'P2': '=AVERAGE(FILTER(P3:P, ISNUMBER(P3:P)))',
+        'Q2': '=AVERAGE(FILTER(Q3:Q, ISNUMBER(Q3:Q)))',
+        'R2': '=AVERAGE(FILTER(R3:R, ISNUMBER(R3:R)))',
+        'S2': '=AVERAGE(FILTER(S3:S, ISNUMBER(S3:S)))'
+        # Add more if needed
+    }
+
+    requests = []
+    for cell, formula in FORMULAS.items():
+        requests.append({
+            'updateCells': {
+                'range': {
+                    'sheetId': sheet.id,
+                    'startRowIndex': int(cell[1:]) - 1,
+                    'endRowIndex': int(cell[1:]),
+                    'startColumnIndex': ord(cell[0].upper()) - ord('A'),
+                    'endColumnIndex': ord(cell[0].upper()) - ord('A') + 1
+                },
+                'rows': [{
+                    'values': [{
+                        'userEnteredValue': {
+                            'formulaValue': formula
+                        }
+                    }]
+                }],
+                'fields': 'userEnteredValue'
+            }
+        })
+
+    sheet.spreadsheet.batch_update({'requests': requests})
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Text systemctl list-timers results to monitor broadcast timers.')
     parser.add_argument('-p','--pc-name',type=str,required=True,help='System name that script is running on.')
