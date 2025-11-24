@@ -11,6 +11,8 @@ from dateutil import tz # pip install python-dateutil
 
 from datetime import datetime
 
+import threading
+
 import googleapiclient.discovery
 import googleapiclient.errors
 from googleapiclient.errors import HttpError
@@ -23,6 +25,7 @@ import global_file as gf # local file for sharing globals between files
 import gspread # pip3 install gspread==4.0.0
 
 NUM_RETRIES = 5
+_YT_LOCK = threading.RLock()
 
 # YouTube no longer has a default broadcast, so the only ways to have a new broadcast created are to use the GoLive button in YouTube Studio, or to use the API and create a new live event. AutoStart is selected so the broadcast goes live as soon as you start streaming data to it. AutoStop is turned off so that if something causs a hiccup in the stream, YouTube won't close out the video before you're ready (had that happen on a few occasions) Because this stream is going out to families, including children I've set this to mark the videos as made for children. This causes many things to be tuned off (like monatization, personalized ads, comments and live chat) but I don't think any of those effect what we're trying to accomplish here.
 def create_live_event(youtube, title, description, starttime, duration, thumbnail, ward, num_from = None, num_to = None, verbose = False, language = None, captions = False):
@@ -31,27 +34,28 @@ def create_live_event(youtube, title, description, starttime, duration, thumbnai
     duration = dt.datetime.strptime(duration,'%H:%M:%S')
     endtime = starttime + dt.timedelta(hours=duration.hour, minutes=duration.minute, seconds=duration.second)
     try:
-        insert_broadcast = youtube.liveBroadcasts().insert(
-            part="snippet,contentDetails,status",
-            body={
-              "contentDetails": {
-                "closedCaptionsType": "closedCaptionsDisabled",
-                "enableContentEncryption": True,
-                "enableDvr": True,
-                "enableAutoStart": True,
-                "enableAutoStop": False,
-              },
-              "snippet": {
-                "title": title,
-                "scheduledStartTime": starttime.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                "scheduledEndTime": endtime.strftime('%Y-%m-%dT%H:%M:%SZ'),
-              },
-              "status": {
-                "privacyStatus": "unlisted",
-                "selfDeclaredMadeForKids": True,
-              }
-            }
-        ).execute()
+        with _YT_LOCK:
+            insert_broadcast = youtube.liveBroadcasts().insert(
+                part="snippet,contentDetails,status",
+                body={
+                  "contentDetails": {
+                    "closedCaptionsType": "closedCaptionsDisabled",
+                    "enableContentEncryption": True,
+                    "enableDvr": True,
+                    "enableAutoStart": True,
+                    "enableAutoStop": False,
+                  },
+                  "snippet": {
+                    "title": title,
+                    "scheduledStartTime": starttime.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    "scheduledEndTime": endtime.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                  },
+                  "status": {
+                    "privacyStatus": "unlisted",
+                    "selfDeclaredMadeForKids": True,
+                  }
+                }
+            ).execute()
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed to insert new Broadcast")
@@ -62,23 +66,24 @@ def create_live_event(youtube, title, description, starttime, duration, thumbnai
     videoID = insert_broadcast['id']
 
     try:
-        update_category = youtube.videos().update(
-            part="snippet",
-            body={
-                "id": videoID,
-                "snippet":{
-                    "categoryId": 29,
-                    "title": title, # this doesn't work if the title isn't included
-                    "description": description
-                },
-            } if(description is not None) else {
-                 "id": videoID,
-                "snippet":{
-                    "categoryId": 29,
-                    "title": title # this doesn't work if the title isn't included
-                },
-            }
-        ).execute()
+        with _YT_LOCK:
+            update_category = youtube.videos().update(
+                part="snippet",
+                body={
+                    "id": videoID,
+                    "snippet":{
+                        "categoryId": 29,
+                        "title": title, # this doesn't work if the title isn't included
+                        "description": description
+                    },
+                } if(description is not None) else {
+                     "id": videoID,
+                    "snippet":{
+                        "categoryId": 29,
+                        "title": title # this doesn't work if the title isn't included
+                    },
+                }
+            ).execute()
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed to update Catagory")
@@ -88,10 +93,11 @@ def create_live_event(youtube, title, description, starttime, duration, thumbnai
     
     if(thumbnail is not None and os.path.exists(thumbnail)):
         try:
-            set_thumbnail = youtube.thumbnails().set(
-                videoId=videoID,
-                media_body=MediaFileUpload(thumbnail, mimetype='image/jpeg',chunksize=-1, resumable=True)
-            ).execute()
+            with _YT_LOCK:
+                set_thumbnail = youtube.thumbnails().set(
+                    videoId=videoID,
+                    media_body=MediaFileUpload(thumbnail, mimetype='image/jpeg',chunksize=-1, resumable=True)
+                ).execute()
         except:
             if(verbose): print(traceback.format_exc())
             print("Failed to update Thumbnail")
@@ -106,16 +112,17 @@ def get_next_broadcast(youtube, ward, num_from = None, num_to = None, verbose = 
     nextPage = 0
     while(nextPage is not None):
         try:
-            list_broadcasts = youtube.liveBroadcasts().list(
-                part='id,snippet,status',
-                broadcastType='all',
-                mine=True
-            ).execute() if nextPage == 0 else youtube.liveBroadcasts().list(
-                part='id,snippet,status',
-                broadcastType='all',
-                mine=True,
-                pageToken=nextPage
-            ).execute()
+            with _YT_LOCK:
+                list_broadcasts = youtube.liveBroadcasts().list(
+                    part='id,snippet,status',
+                    broadcastType='all',
+                    mine=True
+                ).execute() if nextPage == 0 else youtube.liveBroadcasts().list(
+                    part='id,snippet,status',
+                    broadcastType='all',
+                    mine=True,
+                    pageToken=nextPage
+                ).execute()
         except:
             if(verbose): print(traceback.format_exc())
             print("Failed to get next broadcast")
@@ -180,14 +187,15 @@ def get_broadcasts(youtube, ward, num_from = None, num_to = None, verbose = Fals
             exception = None
             tb = None
             try:
-                list_broadcasts = youtube.liveBroadcasts().list(
-                    part='id,status',
-                    broadcastStatus='all',
-                ).execute() if nextPage == 0 else youtube.liveBroadcasts().list(
-                    part='id,status',
-                    broadcastStatus='all',
-                    pageToken=nextPage
-                ).execute()
+                with _YT_LOCK: # this lock is required based on results from core dump, others are optional and may be overkill
+                    list_broadcasts = youtube.liveBroadcasts().list(
+                        part='id,status',
+                        broadcastStatus='all',
+                    ).execute() if nextPage == 0 else youtube.liveBroadcasts().list(
+                        part='id,status',
+                        broadcastStatus='all',
+                        pageToken=nextPage
+                    ).execute()
                 break
             except Exception as exc:
                 exception = exc
@@ -222,11 +230,12 @@ def get_broadcast_status(youtube, videoID, ward, num_from = None, num_to = None,
         exception = None
         tb = None
         try:
-            broadcast = youtube.liveBroadcasts().list(
-                part='status',
-                broadcastType='all',
-                id=videoID
-            ).execute()
+            with _YT_LOCK: # this lock is required based on results from core dump, others are optional and may be overkill
+                broadcast = youtube.liveBroadcasts().list(
+                    part='status',
+                    broadcastType='all',
+                    id=videoID
+                ).execute()
             return(broadcast['items'][0]['status']['lifeCycleStatus'])
         except Exception as exc:
             exception = exc
@@ -250,18 +259,20 @@ def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None,
         exception = None
         tb = None
         try:
-            broadcast_details = youtube.liveBroadcasts().list(
-                part='contentDetails',
-                id=videoID
-            ).execute()
+            with _YT_LOCK: # this lock is required based on results from core dump, others are optional and may be overkill
+                broadcast_details = youtube.liveBroadcasts().list(
+                    part='contentDetails',
+                    id=videoID
+                ).execute()
 
             stream_id = broadcast_details['items'][0]['contentDetails'].get('boundStreamId')
 
             if(stream_id):
-                stream = youtube.liveStreams().list(
-                    part='status',
-                    id=stream_id
-                ).execute()
+                with _YT_LOCK:
+                    stream = youtube.liveStreams().list(
+                        part='status',
+                        id=stream_id
+                    ).execute()
 
                 healthStatus = stream['items'][0]['status']['healthStatus']['status']
                 description = stream['items'][0]['status']['healthStatus']['configurationIssues'][0]['description'] if 'configurationIssues' in stream['items'][0]['status']['healthStatus'] else ""
@@ -282,22 +293,23 @@ def get_broadcast_health(youtube, videoID, ward, num_from = None, num_to = None,
 
 def create_stream(youtube, ward, num_from = None, num_to = None, verbose = False, stream_name = 'Default'):
     try:
-        getStream = youtube.liveStreams().insert(
-            part="snippet,contentDetails,cdn",
-            body={
-              "contentDetails": {
-                "isReusable": True,
-              },
-              "snippet": {
-                "title": stream_name,
-              },
-              "cdn": {
-                "frameRate": "30fps",
-                "resolution": "Variable",
-                "ingestionType": "rtmp",
-              }
-            }
-        ).execute()
+        with _YT_LOCK:
+            getStream = youtube.liveStreams().insert(
+                part="snippet,contentDetails,cdn",
+                body={
+                  "contentDetails": {
+                    "isReusable": True,
+                  },
+                  "snippet": {
+                    "title": stream_name,
+                  },
+                  "cdn": {
+                    "frameRate": "30fps",
+                    "resolution": "Variable",
+                    "ingestionType": "rtmp",
+                  }
+                }
+            ).execute()
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed to get Stream")
@@ -309,10 +321,11 @@ def create_stream(youtube, ward, num_from = None, num_to = None, verbose = False
 # liveStream is the enpoint that ffmpeg is going to be sending the rtsp stream at, this is the target of the stream key from YouTube Studio, but for binding a broadcast we need to use the stream ID not the stream key
 def get_stream(youtube, ward, num_from = None, num_to = None, verbose = False, stream_num = 0):
     try:
-        getStream = youtube.liveStreams().list(
-            part='id',
-            mine=True
-        ).execute()
+        with _YT_LOCK:
+            getStream = youtube.liveStreams().list(
+                part='id',
+                mine=True
+            ).execute()
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed to get Stream")
@@ -338,11 +351,12 @@ def bind_broadcast(youtube, videoID, streamID, ward, num_from = None, num_to = N
         return()
 
     try:
-        bindBroadcast = youtube.liveBroadcasts().bind(
-            id=videoID,
-            part='snippet,status',
-            streamId=streamID,
-        ).execute()
+        with _YT_LOCK:
+            bindBroadcast = youtube.liveBroadcasts().bind(
+                id=videoID,
+                part='snippet,status',
+                streamId=streamID,
+            ).execute()
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed to bind broadcasts")
@@ -355,11 +369,12 @@ def stop_broadcast(youtube, videoID, ward, num_from = None, num_to = None, verbo
         exception = None
         tb = None
         try:
-            stopBroadcast = youtube.liveBroadcasts().transition(
-                broadcastStatus='complete',
-                id=videoID,
-                part='snippet,status'
-            ).execute()
+            with _YT_LOCK:
+                stopBroadcast = youtube.liveBroadcasts().transition(
+                    broadcastStatus='complete',
+                    id=videoID,
+                    part='snippet,status'
+                ).execute()
             break
         except HttpError as exc:
             exception = exc
@@ -389,10 +404,11 @@ def get_view_count(youtube, videoID, ward, num_from = None, num_to = None, verbo
         exception = None
         tb = None
         try:
-            videoDetails = youtube.videos().list(
-                part='statistics',
-                id=videoID
-            ).execute()
+            with _YT_LOCK:
+                videoDetails = youtube.videos().list(
+                    part='statistics',
+                    id=videoID
+                ).execute()
             if videoDetails.get('items'):
                 if('viewCount' in videoDetails['items'][0]['statistics']):
                     totalViews = int(videoDetails['items'][0]['statistics']['viewCount'])
@@ -423,10 +439,11 @@ def get_concurrent_viewers(youtube, videoID, ward, num_from = None, num_to = Non
         exception = None
         tb = None
         try:
-            liveDetails = youtube.videos().list(
-                part='liveStreamingDetails',
-                id=videoID
-            ).execute()
+            with _YT_LOCK:  # this lock is required based on results from core dump, others are optional and may be overkill
+                liveDetails = youtube.videos().list(
+                    part='liveStreamingDetails',
+                    id=videoID
+                ).execute()
             if('concurrentViewers' in liveDetails['items'][0]['liveStreamingDetails']):
                 currentViewers = liveDetails['items'][0]['liveStreamingDetails']['concurrentViewers']
             else:
@@ -454,6 +471,13 @@ def next_available_row(sheet, column, cols_to_sample=1):
   if(next_row <= gf.GD_TOTAL_ROW) :
     next_row = gf.GD_TOTAL_ROW + 1
   return next_row
+
+def check_column(sheet, videoID, column):
+    try:
+        column = sheet.find(videoID)
+    except gspread.exceptions.CellNotFound:
+        column = column
+    return column
 
 def get_sheet_row_and_column(credentials_file, googleDoc, videoID, ward, num_from = None, num_to = None, verbose = None):
     #client = gspread.authorize(google_auth.get_credentials_google_drive(ward, num_from, num_to, verbose))

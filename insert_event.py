@@ -46,6 +46,10 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
+    ward = args.ward
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
     broadcast_day = None
     description = None
 
@@ -55,7 +59,7 @@ if __name__ == '__main__':
 
             # check for keys in config file
             if 'broadcast_ward' in config:
-                args.ward = config['broadcast_ward']
+                ward = config['broadcast_ward']
             if 'broadcast_title' in config:
                 args.title = config['broadcast_title']
             if 'broadcast_title_card' in config:
@@ -87,15 +91,15 @@ if __name__ == '__main__':
             if 'broadcast_status' in config:
                 args.status_file = config['broadcast_status']
             if 'notification_text_from' in config:
-                args.num_from = config['notification_text_from']
+                num_from = config['notification_text_from']
             if 'notification_text_to' in config:
-                args.num_to = config['notification_text_to']
+                num_to = config['notification_text_to']
 
-    if(args.ward is None):
+    if(ward is None):
         print("!!Ward is a required argument!!")
         exit()
 
-    credentials_file = args.ward.lower() + '.auth'
+    credentials_file = ward.lower() + '.auth'
 
     # if sending in a start date argument, it should override json file
     if(args.start_date is not None):
@@ -110,15 +114,15 @@ if __name__ == '__main__':
             if(next_days == 0): next_days = 7
             broadcast_date = datetime.strftime(start_time + timedelta(days=next_days), '%m/%d/%y')
         except:
-            if(args.verbose): print(traceback.format_exc())
+            if(verbose): print(traceback.format_exc())
             print("Failed to get broadcast date")
-            if(args.num_from is not None and args.num_to is not None):
-                sms.send_sms(args.num_from, args.num_to, args.ward + " failed to get broadcast date!", args.verbose)
+            if(num_from is not None and num_to is not None):
+                sms.send_sms(num_from, num_to, ward + " failed to get broadcast date!", verbose)
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, broadcast_date, args.ward, args.num_from, args.num_to, args.verbose)
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, broadcast_date, ward, num_from, num_to, verbose)
 
     #authenticate with YouTube API
-    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', args.verbose)
+    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', verbose)
 
     # normally we are only binding videos just before we're ready to send the 
     # stream to them, this allows us to control which broadcast is getting the
@@ -127,23 +131,23 @@ if __name__ == '__main__':
     # broadcasts, which are generally not automated and controlled manually
     # from the YouTube Studio
     if(args.stream is None):
-        for video_id, video_status in yt.get_broadcasts(youtube, args.ward, args.num_from, args.num_to, args.verbose).items():
+        for video_id, video_status in yt.get_broadcasts(youtube, ward, num_from, num_to, verbose).items():
             if(video_status == "ready"):
                 youtube.videos().delete(id=video_id).execute()
 
     if(args.current_id is None):
-        current_id = insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, args.ward, args.num_from, args.num_to, args.verbose)
+        current_id = insert_event(youtube, args.title, description, start_time, args.run_time, args.thumbnail, ward, num_from, num_to, verbose)
     else:
         current_id = args.current_id
 
     if(args.stream is not None):
-        bind_event(youtube, current_id, args.ward, args.num_from, args.num_to, args.verbose, args.stream)
+        bind_event(youtube, current_id, ward, num_from, num_to, verbose, args.stream)
 
     if(current_id is None):
         print("Failed to insert new broadcast!")
     else:
         # modified the status-file cli parameter so that it doesn't have a default values here, so we can decide if we want this to update the status file or not at runtime
         if(args.status_file is not None):
-            update_status.update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
+            update_status.update("start", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
         #make sure link on web host is current
-        update_link.update_live_broadcast_link(current_id, args, args.ward, args.html_filename, args.url_filename)
+        update_link.update_live_broadcast_link(current_id, args, ward, num_from, num_to, args.html_filename, args.url_filename)

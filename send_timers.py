@@ -144,6 +144,10 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
+
     send_text = ""
     console_text = ""
     failure_text = ""
@@ -275,7 +279,7 @@ if __name__ == '__main__':
         status = 'Pass' if ' 0% packet loss' in result.stdout else '!!FAILED!!'
         diagnostics['ptz_status'] = status
     except Exception as e:
-        if(args.verbose): print(f"Exception: {e}")
+        if(verbose): print(f"Exception: {e}")
         status = f'!!! CAMERA PING FAILED !!!'
         diagnostics['ptz_status'] = 'Fail'
     console_text += f'\n\n PTZ Camera : {status}'
@@ -338,13 +342,13 @@ if __name__ == '__main__':
     failures_str = "\n".join(failures) if failures else "All checks passed"
 
     if(args.wards is not None):
-        log_diagnostics_to_sheet(args.wards.split(',')[0].strip(), args.pc_name, googleDoc, diagnostics, failures_str, args.num_from, args.num_to, args.verbose)
+        log_diagnostics_to_sheet(args.wards.split(',')[0].strip(), args.pc_name, googleDoc, diagnostics, failures_str, num_from, num_to, verbose)
     else:
         print("!!Can't Log Diagnostic Data with a Ward!!")
 
-    if(args.num_from is not None and args.num_to is not None):
+    if(num_from is not None and num_to is not None):
         print(send_text + console_text + failure_text)
-        sms.send_sms(args.num_from, args.num_to, send_text + failure_text, args.verbose)
+        sms.send_sms(num_from, num_to, send_text + failure_text, verbose)
     else:
         print(send_text + console_text + failure_text)
         print("\n\nNo numbers given, nothing to send")

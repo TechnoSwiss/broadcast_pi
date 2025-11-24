@@ -100,7 +100,11 @@ def write_output(credentials_file, outFile, youtube, videoID, ward, num_from = N
                 exception = None
                 tb = None
                 try:
-                    sheet.update_cell(insert_row,column, numViewers)
+                    # we had just been using column here, which is returned by yt.get_sheet_row_and_column, however for stake conference where we're running two instances
+                    # they both end up writing to column 1 if we're not careful about how they're started, so better to just use sheet.find(videoID) to grab the correct column
+                    # assuming this doesn't add a bunch of extra time/processing power
+                    #column = check_column(sheet, videoID, column)
+                    sheet.update_cell(insert_row, column, numViewers)
                     insert_row = insert_row + 1
                     break
                 except Exception as exc:
@@ -192,6 +196,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ward = args.ward
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
     current_id = args.current_id
     insert_next_broadcast = False
     email_send = args.email_send
@@ -205,7 +212,7 @@ if __name__ == '__main__':
 
     if(args.delete_control is not None):
         if(args.delete_control & 0x01):
-            if(args.verbose) : print("disable delete current")
+            if(verbose) : print("disable delete current")
             delete_current = False
 
     if(args.config_file is not None):
@@ -213,7 +220,7 @@ if __name__ == '__main__':
             config_file = args.config_file
         else:
             config_file =  os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file
-    if(args.verbose): print('Config file : ' + config_file)
+    if(verbose): print('Config file : ' + config_file)
     if(config_file is not None and os.path.exists(config_file)):
         with open(config_file, "r") as configFile:
             config = json.load(configFile)
@@ -236,15 +243,13 @@ if __name__ == '__main__':
             if 'email_viewer_addresses' in config:
                 args.email_to = config['email_viewer_addresses']
             if 'notification_text_from' in config:
-                args.num_from = config['notification_text_from']
+                num_from = config['notification_text_from']
             if 'notification_text_to' in config:
-                args.num_to = config['notification_text_to']
+                num_to = config['notification_text_to']
 
     if(ward is None):
         print("!!Ward is a required argument!!")
         exit()
-    else:
-        args.ward = ward # this argument gets passed in the deletion sub routine
 
     if(args.email_from is None):
         print("!!Email From is a required argument!!")
@@ -260,7 +265,7 @@ if __name__ == '__main__':
     graph_file = ward.lower() + (('_' + current_id) if current_id is not None else '') + '_viewers.png'
 
     if(args.test_image):
-        write_viewer_image(viewers_file, graph_file, ward, args.num_from, args.num_to, args.verbose)
+        write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
         exit()
 
     if(current_id is None):
@@ -269,9 +274,9 @@ if __name__ == '__main__':
 
 
     #authenticate with YouTube API
-    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', args.verbose)
+    youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', verbose)
 
-    count = threading.Thread(target = count_viewers, args = (credentials_file, viewers_file, graph_file, youtube, current_id, ward, args.num_from, args.num_to, args.verbose, args.extended, None, args.append, googleDoc))
+    count = threading.Thread(target = count_viewers, args = (credentials_file, viewers_file, graph_file, youtube, current_id, ward, num_from, num_to, verbose, args.extended, None, args.append, googleDoc))
     count.start()
     count.join()
 
@@ -280,17 +285,17 @@ if __name__ == '__main__':
     else:
         print("Exiting Broadcast")
 
-    numViewers = yt.get_view_count(youtube, current_id, ward, args.num_from, args.num_to, args.verbose)
+    numViewers = yt.get_view_count(youtube, current_id, ward, num_from, num_to, verbose)
     if(not gf.killer.kill_now and email_send):
         if(args.email_from is not None and args.email_to is not None):
-            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), uploaded_url, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), uploaded_url, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
 
     if(googleDoc is not None):
-        sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, current_id, ward, args.num_from, args.num_to, args.verbose)
+        sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, current_id, ward, num_from, num_to, verbose)
         sheet.update_cell(gf.GD_VIEWS_ROW,column, "Views = " + str(numViewers))
 
     # don't run video deletion if we Ctrl+C out of the process
     if(not gf.killer.kill_now and delete_current):
         run_deletion_time = datetime.now() + timedelta(minutes=int(args.delay_after))
         print("video(s) deletion routine will run at {}".format(run_deletion_time.strftime("%H:%M %Y-%m-%d")))
-        delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args)
+        delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose)

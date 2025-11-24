@@ -116,10 +116,10 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    verbose = args.verbose
+    ward = args.ward
     num_from = args.num_from
     num_to = args.num_to
-    ward = args.ward
+    verbose = args.verbose
 
     if(args.config_file is not None):
         if("/" in args.config_file):

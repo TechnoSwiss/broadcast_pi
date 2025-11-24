@@ -168,7 +168,9 @@ def drain_stderr(pipe, buffer, verbose=False, log_filename=None):
             log_file = None
 
     try:
-        for line in iter(pipe.readline, b''):
+        for line in iter(lambda: pipe.readline(), b''):
+            if not line:
+                break
             decoded = line.decode(errors='ignore').strip()
             if decoded:
                 buffer.append(decoded)
@@ -189,7 +191,6 @@ def drain_stderr(pipe, buffer, verbose=False, log_filename=None):
                 log_file.close()
             except Exception as e:
                 if verbose: print(f"Error closing log file: {e}")
-
 
 def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream, broadcast_downgrade_delay, bandwidth_file, ffmpeg_img, audio_record, audio_record_control, num_from, num_to, args, verbose):
     process = None

@@ -20,13 +20,13 @@ import global_file as gf # local file for sharing globals between files
 
 import gspread # pip3 install gspread==4.0.0
 
-def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_deletion_time, args):
+def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose = False):
     try:
         deletion_command = 'echo ' + os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
         if(args.config_file is not None):
             deletion_command = deletion_command + ' -c ' + args.config_file
-        if(args.ward is not None):
-            deletion_command = deletion_command + ' -w ' + args.ward
+        if(ward is not None):
+            deletion_command = deletion_command + ' -w ' + ward
         if(args.title is not None):
             deletion_command = deletion_command + ' -i \\"' + args.title.replace("\'", "\\\'") + '\\"'
         if(args.status_file is not None):
@@ -63,33 +63,33 @@ def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_del
             deletion_command = deletion_command + ' -M ' + args.dkim_private_key
         if(args.dkim_selector is not None):
             deletion_command = deletion_command + ' -m ' + args.dkim_selector
-        if(args.num_from is not None):
-            deletion_command = deletion_command + ' -F ' + args.num_from
-        if(args.num_to is not None and type(args.num_to) is not list):
-            deletion_command = deletion_command + ' -T ' + args.num_to
-        if(args.verbose is not None):
-            if(args.verbose):
+        if(num_from is not None):
+            deletion_command = deletion_command + ' -F ' + num_from
+        if(num_to is not None and type(num_to) is not list):
+            deletion_command = deletion_command + ' -T ' + num_to
+        if(verbose is not None):
+            if(verbose):
                 deletion_command = deletion_command + ' -v'
         # create next weeks broadcast if recurring
         # don't create a new broadcast if forcibly killing process
         if(recurring):
             deletion_command = deletion_command + ' -I'
 
-        deletion_command = deletion_command + ' --broadcast-time \\"' + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + '\\"'
+        deletion_command = deletion_command + ' --broadcast-time \\"' + datetime.now().strftime("%m/%d/%Y %H:%M:%S") + '\\"'
 
         if run_deletion_time < datetime.now():
             run_deletion_time = datetime.now() + timedelta(seconds=30)
-            if(args.verbose): print(f"Delete time is in the past, setting new deletion time to {run_deletion_time.strftime('%H:%M %Y-%m-%d')}")
+            if(verbose): print(f"Delete time is in the past, setting new deletion time to {run_deletion_time.strftime('%H:%M %Y-%m-%d')}")
 
-        if(args.verbose) : print(deletion_command.replace('\\"', '"'))
+        if(verbose) : print(deletion_command.replace('\\"', '"'))
         ps = subprocess.Popen(split(deletion_command), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         subprocess.run(["at", run_deletion_time.strftime("%H:%M %Y-%m-%d")], stdin=ps.stdout)
         ps.wait()
     except:
-        if(args.verbose): print(traceback.format_exc())
+        if(verbose): print(traceback.format_exc())
         print("Failure setting up delete event")
-        if(args.num_from is not None and args.num_to is not None):
-            sms.send_sms(args.num_from, args.num_to, args.ward + " had a failure setting up the delete event!", args.verbose)
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " had a failure setting up the delete event!", verbose)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Insert Live Broadcast in YouTube Live list.')
@@ -122,10 +122,10 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    verbose = args.verbose
+    ward = args.ward
     num_from = args.num_from
     num_to = args.num_to
-    ward = args.ward
+    verbose = args.verbose
     current_id = args.current_id
     insert_next_broadcast = args.insert_next_broadcast
     email_send = args.email_send
@@ -240,9 +240,15 @@ if __name__ == '__main__':
                 if(verbose) : print("e-mail total views")
                 if(args.email_from is not None and args.email_to is not None):
                     if(args.broadcast_date is not None):
-                        broadcast_time = datetime.strptime(args.broadcast_date + " 12:00:00", "%Y-%m-%d %H:%M:%S")
+                        try:
+                            broadcast_time = datetime.strptime(args.broadcast_date + " 12:00:00", "%m/%d/%Y %H:%M:%S")
+                        except:
+                            broadcast_time = datetime.strptime(args.broadcast_date + " 12:00:00", "%Y-%m-%d %H:%M:%S")
                     elif(args.broadcast_time is not None):
-                        broadcast_time = datetime.strptime(args.broadcast_time, "%Y-%m-%d %H:%M:%S")
+                        try:
+                            broadcast_time = datetime.strptime(args.broadcast_time, "%m/%d/%Y %H:%M:%S")
+                        except:
+                            broadcast_time = datetime.strptime(args.broadcast_time, "%Y-%m-%d %H:%M:%S")
                     else:
                         broadcast_time = None
                     send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.num_viewers, broadcast_time, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
@@ -327,4 +333,4 @@ if __name__ == '__main__':
             if(num_from is not None and num_to is not None): sms.send_sms(num_from, num_to, ward + " failed to create broadcast for next week!", verbose)
 
         # make sure link on web host is current
-        update_link.update_live_broadcast_link(current_id, args, ward, args.html_filename, args.url_filename, verbose)
+        update_link.update_live_broadcast_link(current_id, args, ward, num_from, num_to, args.html_filename, args.url_filename, verbose)

@@ -328,6 +328,11 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False,action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
+    ward = args.ward
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
+
     gf.killer = GracefulKiller()
 
     if(args.config_file is not None and os.path.exists(args.config_file)):
@@ -336,7 +341,7 @@ if __name__ == '__main__':
 
             # check for keys in config file
             if 'broadcast_ward' in config:
-                args.ward = config['broadcast_ward']
+                ward = config['broadcast_ward']
             if 'preset_file' in config and args.preset_file is None:
                 args.preset_file = config['preset_file']
             if 'source_rtsp_stream' in config:
@@ -344,9 +349,9 @@ if __name__ == '__main__':
             if 'preset_status_file' in config:
                 preset_status_file = config['preset_status_file']
             if 'notification_text_from' in config:
-                args.num_from = config['notification_text_from']
+                num_from = config['notification_text_from']
             if 'notification_text_to' in config:
-                args.num_to = config['notification_text_to']
+                num_to = config['notification_text_to']
 
     if(args.rtsp_stream is not None):
         ip_pattern = re.compile('''((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)''')
@@ -356,17 +361,17 @@ if __name__ == '__main__':
         print("A valid configuration file and rtsp stream are required to monitor presets.")
 
     if(args.record_presets):
-        record_presets(args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.num_from, args.num_to, args.verbose)
+        record_presets(ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, num_from, num_to, verbose)
         exit()
 
     if(args.set_presets):
-        set_preset(args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.set_preset, args.set_presets, args.num_from, args.num_to, args.verbose)
+        set_preset(ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.set_preset, args.set_presets, num_from, num_to, verbose)
         exit()
 
     if(args.set_preset is not None):
-        set_preset(args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.set_preset, False, args.num_from, args.num_to, args.verbose)
+        set_preset(ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, args.set_preset, False, num_from, num_to, verbose)
         exit()
 
-    if(camera_ip is not None and (args.ward is not None or args.pc_name is not None) and args.preset_file is not None and preset_status_file is not None):
-        report_preset(0, args.ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, preset_status_file, args.num_from, args.num_to, args.verbose)
+    if(camera_ip is not None and (ward is not None or args.pc_name is not None) and args.preset_file is not None and preset_status_file is not None):
+        report_preset(0, ward if args.pc_name is None else args.pc_name, camera_ip, args.preset_file, preset_status_file, num_from, num_to, verbose)
 

@@ -62,7 +62,7 @@ def list_my_uploaded_videos(youtube, uploads_playlist_id):
             playlistitems_list_request, playlistitems_list_response)
     return video_list
 
-def update_live_broadcast_link(live_broadcast_id, args, ward, path_filename = None, filename = None, verbose = False):
+def update_live_broadcast_link(live_broadcast_id, args, ward, num_from, num_to, path_filename = None, filename = None, verbose = False):
     if(args.host_name is None):
         print("Nothing to update.")
         return()
@@ -114,9 +114,9 @@ def update_live_broadcast_link(live_broadcast_id, args, ward, path_filename = No
         if exception:
             if(verbose): print(tb)
             print("SSH Host key failure.")
-            if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, ward +  " Ward stake website host key failure!", verbose)
+            if(num_from is not None): sms.send_sms(num_from, num_to, ward +  " Ward stake website host key failure!", verbose)
     else:
-        if(args.num_from is not None): sms.send_sms(args.num_from, args.num_to, ward + " Ward YouTube SSH Key and Password files are required!", verbose)
+        if(num_from is not None): sms.send_sms(num_from, num_to, ward + " Ward YouTube SSH Key and Password files are required!", verbose)
         print("SSH Key or Password file is missing for link upload.")
         exit()
     
@@ -137,19 +137,19 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
+    ward = args.ward
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
+
     if(args.host_name is not None or args.user_name is not None or args.home_dir is not None):
         if(args.host_name is None or args.user_name is None or args.home_dir is None):
             print("If host-name, user-name, or home-dir parameter is defined, all 3 parameters must be defined.")
             exit()
-    if(args.num_from is not None or args.num_to is not None):
-        if(args.num_from is None or args.num_to is None):
+    if(num_from is not None or num_to is not None):
+        if(num_from is None or num_to is None):
             print("If SMS notification numbers are defined, both From and To numbers must be defined.")
             exit()
-
-    ward = args.ward
-    num_to = args.num_to
-    num_from = args.num_from
-    verbose = args.verbose
 
     if(args.config_file is not None):
         if("/" in args.config_file):
@@ -198,4 +198,4 @@ if __name__ == '__main__':
         exit()
 
     #make sure link on hillsborostake.org is current
-    update_live_broadcast_link(videos[0], args, ward, args.html_filename, None, verbose)
+    update_live_broadcast_link(videos[0], args, ward, num_from, num_to, args.html_filename, None, verbose)

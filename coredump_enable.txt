@@ -1,0 +1,26 @@
+    Add system-wide core dump config if needed:
+
+sudo sysctl -w kernel.core_pattern=/home/samuel/broadcast_pi/logs/core.%e.%p.%t
+ulimit -c unlimited
+
+    Make persistent:
+
+sudo vim /etc/sysctl.conf
+
+Add: kernel.core_pattern=/home/samuel/broadcast_pi/logs/core.%e.%p.%t
+
+sudo sysctl -p
+
+Create or edit /etc/systemd/system.conf and /etc/systemd/user.conf:
+
+DefaultLimitCORE=infinity
+
+Then reload:
+
+sudo systemctl daemon-reexec
+
+Check core dumps after a crash (if coredumpctl is installed):
+
+coredumpctl list
+coredumpctl info <PID>
+coredumpctl gdb <PID>

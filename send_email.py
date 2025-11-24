@@ -101,7 +101,7 @@ def send_total_views(email_from, email_to, ward, total_views, total_previous_vie
         if(verbose): print(traceback.format_exc())
         print("Failed to send final viewers email")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to send final viewers!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed to send final viewers email!", verbose)
 
 def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views, broadcast_time = None, uploaded_url = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
     try:
@@ -171,13 +171,13 @@ def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views
             if(verbose): print(traceback.format_exc())
             print("Failed to save CSV file email to sent folder")
             if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, ward + " failed to save current viewers to sent folder!", verbose)
+                sms.send_sms(num_from, num_to, ward + " failed to save current viewers with CSV to sent folder!", verbose)
 
     except:
         if(verbose): print(traceback.format_exc())
         print("Failed to send CSV file email")
         if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to send current viewers!", verbose)
+            sms.send_sms(num_from, num_to, ward + " failed to send current viewers with CSV email!", verbose)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Email CSV file')
@@ -199,8 +199,10 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    verbose = args.verbose
     ward = args.ward
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
     delete_current = False
     email_send = True
     recurring = True # is this a recurring broadcast, then create a new broadcast for next week
@@ -218,7 +220,6 @@ if __name__ == '__main__':
             # check for keys in config file
             if 'broadcast_ward' in config:
                 ward = config['broadcast_ward']
-                args.ward = ward # this value gets passed to the deletion routine
             if 'broadcast_title' in config:
                 args.title = config['broadcast_title'] # this value gets passed to the deletion routine
             if 'broadcast_title_card' in config:
@@ -258,10 +259,8 @@ if __name__ == '__main__':
                 args.email_to = config['email_viewer_addresses']
             if 'notification_text_from' in config:
                 num_from = config['notification_text_from']
-                args.num_from = num_from # this value gets passed to the deletion routine
             if 'notification_text_to' in config:
                 num_to = config['notification_text_to']
-                args.num_to = num_to # this value gets passed to the deletion routine
             if 'delete_current' in config:
                 delete_current = config['delete_current']
             if 'delete_time_delay' in config:
@@ -297,10 +296,10 @@ if __name__ == '__main__':
         count_viewers.write_viewer_image(args.viewers_file, args.image_file, ward, num_from, num_to, verbose)
 
     if(args.viewers_file is not None and args.image_file is not None):
-        send_viewer_file(args.viewers_file, args.image_file, args.email_from, args.email_to, ward, args.num_viewers, broadcast_time, None, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+        send_viewer_file(args.viewers_file, args.image_file, args.email_from, args.email_to, ward, args.num_viewers, broadcast_time, None, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
         if(delete_current and args.current_id is not None):
-            if(args.verbose) : print("Setup event deletion")
+            if(verbose) : print("Setup event deletion")
             run_deletion_time = broadcast_time + timedelta(minutes=int(args.delay_after))
-            delete_event.setup_event_deletion(args.current_id, args.num_viewers, email_send, recurring, run_deletion_time, args)
+            delete_event.setup_event_deletion(args.current_id, args.num_viewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose)
     else:
-        send_total_views(args.email_from, args.email_to, ward, args.num_viewers, 0, broadcast_time, args.dkim_private_key, args.dkim_selector, args.num_from, args.num_to, args.verbose)
+        send_total_views(args.email_from, args.email_to, ward, args.num_viewers, 0, broadcast_time, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)

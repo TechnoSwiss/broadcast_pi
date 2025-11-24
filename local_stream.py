@@ -76,6 +76,11 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
+    ward = args.ward
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
+
     gf.killer = GracefulKiller()
 
     if(args.config_file is not None and os.path.exists(args.config_file)):
@@ -84,7 +89,7 @@ if __name__ == '__main__':
 
             # check for keys in config file
             if 'broadcast_ward' in config:
-                args.ward = config['broadcast_ward']
+                ward = config['broadcast_ward']
             if 'local_stream' in config:
                 local_stream = config['local_stream']
             if 'local_stream_output' in config:
@@ -92,9 +97,9 @@ if __name__ == '__main__':
             if 'local_stream_control' in config:
                 local_stream_control = config['local_stream_control']
             if 'notification_text_from' in config:
-                args.num_from = config['notification_text_from']
+                num_from = config['notification_text_from']
             if 'notification_text_to' in config:
-                args.num_to = config['notification_text_to']
+                num_to = config['notification_text_to']
 
     if(local_stream is not None and local_stream_output is not None and local_stream_control is not None):
-        local_stream_process(args.ward if args.pc_name is None else args.pc_name, local_stream, local_stream_output, local_stream_control, args.num_from, args.num_to, args.verbose)
+        local_stream_process(ward if args.pc_name is None else args.pc_name, local_stream, local_stream_output, local_stream_control, num_from, num_to, verbose)

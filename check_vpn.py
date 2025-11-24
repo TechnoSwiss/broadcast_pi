@@ -48,9 +48,13 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
+
     restart_attempts = os.path.abspath(os.path.dirname(__file__)) + '/vpn_restart'
 
-    vpn_connected = is_vpn_connected(args.pc_name, args.num_from, args.num_to, args.verbose)
+    vpn_connected = is_vpn_connected(args.pc_name, num_from, num_to, verbose)
 
     if(not vpn_connected):
         if(os.path.exists(restart_attempts)):
@@ -58,7 +62,7 @@ if __name__ == '__main__':
                 try:
                     attempts = json.load(attemptsFile)
                 except:
-                    if(args.verbose): print(traceback.format_exc())
+                    if(verbose): print(traceback.format_exc())
                     attempts = {}
         else:
             attempts = {}
@@ -71,15 +75,15 @@ if __name__ == '__main__':
         time_diff = datetime.now() - attempt_first
         max_attempts_hour = (time_diff.seconds//3600 + 1) * ATTEMPTS_PER_HOUR
         max_attempts_day = (time_diff.days + 1) * ATTEMPTS_PER_DAY
-        if(args.verbose): print("Failure Num: " + str(failure_num))
-        if(args.verbose): print("Attempts per Hour: " + str(max_attempts_hour))
-        if(args.verbose): print("Attempts per Day: " + str(max_attempts_day))
-        if(args.verbose): print("Attempt Num: " + str(attempt_num))
+        if(verbose): print("Failure Num: " + str(failure_num))
+        if(verbose): print("Attempts per Hour: " + str(max_attempts_hour))
+        if(verbose): print("Attempts per Day: " + str(max_attempts_day))
+        if(verbose): print("Attempt Num: " + str(attempt_num))
         vpn_restart = False
         if(failure_num > FAILURES_TO_RESTART and attempt_num < max_attempts_hour and attempt_num < max_attempts_day):
             vpn_restart = True
-            #if(args.num_from is not None and args.num_to is not None):
-            #    sms.send_sms(args.num_from, args.num_to, args.pc_name + " VPN down, attempting to restart!", args.verbose)
+            #if(num_from is not None and num_to is not None):
+            #    sms.send_sms(num_from, num_to, args.pc_name + " VPN down, attempting to restart!", verbose)
             print("Restarting VPN.")
             # user account must have passwordless sudo access to restart the OpenVPN service for this to work (ie update sudoers 'ALL=NOPASSWD: /bin/systemctl restart openvpn')
             systemctl_results = check_output(['sudo', 'systemctl', 'restart', 'openvpn'])
@@ -89,11 +93,11 @@ if __name__ == '__main__':
             restart_time = datetime.now()
             while((datetime.now() - restart_time).seconds < DELAY_AFTER_RESTART):
                 time.sleep(1)
-                if(args.verbose): print('Seconds since restart : ' + str((datetime.now() - restart_time).seconds), end='\r')
-            if(not is_vpn_connected(args.pc_name, args.num_from, args.num_to, args.verbose)):
-                if(args.num_from is not None and args.num_to is not None and notification_sent == False):
+                if(verbose): print('Seconds since restart : ' + str((datetime.now() - restart_time).seconds), end='\r')
+            if(not is_vpn_connected(args.pc_name, num_from, num_to, verbose)):
+                if(num_from is not None and num_to is not None and notification_sent == False):
                     attempts['notification_sent'] = True
-                    sms.send_sms(args.num_from, args.num_to, args.pc_name + " VPN failed to restart!", args.verbose)
+                    sms.send_sms(num_from, num_to, args.pc_name + " VPN failed to restart!", verbose)
                 print("VPN failed to restart.")
         with open(restart_attempts, "w") as attemptsFile:
             failure_num += 1
@@ -108,12 +112,12 @@ if __name__ == '__main__':
                 try:
                     attempts = json.load(attemptsFile)
                 except:
-                    if(args.verbose): print(traceback.format_exc())
+                    if(verbose): print(traceback.format_exc())
                     attempts = {}
             notification_sent = attempts['notification_sent'] if 'notification_sent' in attempts else False
             if(notification_sent == True):
-                if(args.num_from is not None and args.num_to is not None):
-                    sms.send_sms(args.num_from, args.num_to, args.pc_name + " VPN back up :D", args.verbose)
+                if(num_from is not None and num_to is not None):
+                    sms.send_sms(num_from, num_to, args.pc_name + " VPN back up :D", verbose)
             print("VPN back up.")
             os.remove(restart_attempts)
 

@@ -65,19 +65,18 @@ def signal_handler(sig, frame):
 # sigfault happening and seemed to be re-segfaulting trying to send SMS alert
 # exit with a non-zero code and handle notification / restart outside script
 def signal_segfault(sig, frame):
-#    print("!!SEGFAULT!!")
-#    faulthandler.dump_traceback(file=sys.stdout, all_threads=True)
-#    if(num_from is not None and num_to is not None):
-#        sms.send_sms(num_from, num_to, ward + " SEGFAULT occured!", verbose)
-#    gf.killer.kill_now = True
-#   os._exit(1) 
-    sys.exit("Caught SegFault, exit and handle notification and restart from outside script")
+    print("!!Caught SIGSEGV!!")
+    faulthandler.dump_traceback(file=faulthandler_log, all_threads=True)
+    faulthandler_log.flush()
+    os._exit(1)
+    #sys.exit("Caught SegFault, exit and handle notification and restart from outside script")
 
 def signal_abort(sig, frame):
     print("\n!!Received SIGABRT!!")
     faulthandler.dump_traceback(file=faulthandler_log, all_threads=True)
     faulthandler_log.flush()
-    sys.exit("Caught SIGABRT, exiting.")
+    os._exit(1)
+    #sys.exit("Caught SIGABRT, exiting.")
 
 def get_active_instances(service_template_prefix):
     try:
@@ -94,7 +93,7 @@ def get_active_instances(service_template_prefix):
     except subprocess.CalledProcessError:
         return []
 
-def stop_instance(unit_name):
+def stop_instance(unit_name, ward, num_from = None, num_to = None, verbose = None):
     try:
         print(f"Stopping: {unit_name}")
         subprocess.run(
@@ -111,12 +110,12 @@ def stop_instance(unit_name):
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, f"{ward} failed to stop {unit_name} : {e.stderr.decode().strip()}", verbose)
 
-def stop_other_instances(service_template_prefix, exclude_instance=None):
+def stop_other_instances(service_template_prefix, ward, exclude_instance=None, num_from = None, num_to = None, verbose = None):
     running = get_active_instances(service_template_prefix)
     for unit in running:
         if exclude_instance and unit == exclude_instance:
             continue
-        stop_instance(unit)
+        stop_instance(unit, ward, num_from, num_to, verbose)
 
 def check_report_missed_sms(ward, num_from = None, num_to = None, verbose = None):
     if(gf.sms_missed > 0):
@@ -144,7 +143,7 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
         if(live_id is not None and live_id != current_id):
             print("Live ID doesnt't match current ID, updating link")
             print(current_id + " => " + live_id)
-            update_link.update_live_broadcast_link(live_id, args, ward, html_filename, url_filename)
+            update_link.update_live_broadcast_link(live_id, args, ward, num_from, num_to, html_filename, url_filename)
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " link ID updated!", verbose)
             current_id = live_id
@@ -202,10 +201,10 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False,action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    verbose = args.verbose
+    ward = args.ward
     num_from = args.num_from
     num_to = args.num_to
-    ward = args.ward
+    verbose = args.verbose
 
     gf.killer = GracefulKiller()
     signal.signal(signal.SIGSEGV, signal_segfault)
@@ -269,8 +268,6 @@ if __name__ == '__main__':
                 testing |= config['testing']
             if 'broadcast_ward' in config:
                 ward = config['broadcast_ward']
-                # some scripts still get information passed via the args dictionary so we need to make sure it's up-to-date
-                args.ward = ward
             if 'broadcast_title' in config:
                 args.title = config['broadcast_title']
             if 'broadcast_title_card' in config:
@@ -371,12 +368,8 @@ if __name__ == '__main__':
                 email_url_addresses = config['email_url_addresses']
             if 'notification_text_from' in config:
                 num_from = config['notification_text_from']
-                # some scripts still get information passed via the args dictionary so we need to make sure it's up-to-date
-                args.num_from = num_from
             if 'notification_text_to' in config:
                 num_to = config['notification_text_to']
-                # some scripts still get information passed via the args dictionary so we need to make sure it's up-to-date
-                args.num_to = num_to
 
     if(args.audio_gain is not None and args.audio_gate is not None):
         print("!!Audio Gain and Audio Gate are mutually exclusive!!")
@@ -492,7 +485,7 @@ if __name__ == '__main__':
             instances = get_active_instances("broadcast@")
             if len(instances) > 1:
                 print(f"Found running instances: {instances}")
-                stop_other_instances("broadcast@", exclude_instance=current_instance)
+                stop_other_instances("broadcast@", ward, exclude_instance=current_instance, num_from, num_to, verbose)
         except:
             tb = traceback.format_exc()
             if(verbose): print(tb)
@@ -541,7 +534,7 @@ if __name__ == '__main__':
         insert_event.bind_event(youtube, current_id, ward, num_from, num_to, verbose)
 
     #make sure link on web host is current
-    update_link.update_live_broadcast_link(current_id, args, ward, args.html_filename, args.url_filename)
+    update_link.update_live_broadcast_link(current_id, args, ward, num_from, num_to, args.html_filename, args.url_filename)
 
     # check if we have music defined to play during the pause
     pause_audio_cmd = "-re -f lavfi -i anullsrc"
@@ -833,7 +826,7 @@ if __name__ == '__main__':
     # schedule video deletion task
     # don't setup deletion if forcibly killing process
     if(not gf.killer.kill_now):
-        delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args)
+        delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     try:

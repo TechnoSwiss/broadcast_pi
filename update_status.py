@@ -87,7 +87,12 @@ if __name__ == '__main__':
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
-    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date, args.ward, args.num_from, args.num_to, args.verbose)
+    ward = args.ward
+    num_from = args.num_from
+    num_to = args.num_to
+    verbose = args.verbose
 
-    update("start", start_time, stop_time, args.status_file, args.ward, args.num_from, args.num_to, args.verbose)
+    start_time, stop_time = update_status.get_start_stop(args.start_time, args.run_time, args.start_date, ward, num_from, num_to, verbose)
+
+    update("start", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
     
