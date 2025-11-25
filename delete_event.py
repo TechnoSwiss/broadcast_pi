@@ -17,6 +17,7 @@ import send_email # send_email.py local file
 import update_status # update_status.py localfile
 import insert_event # insert_event.py local file
 import global_file as gf # local file for sharing globals between files
+import viewer_db # viewer_db.py local file for getting broadcast viewer information from website
 
 import gspread # pip3 install gspread==4.0.0
 
@@ -131,6 +132,11 @@ if __name__ == '__main__':
     email_send = args.email_send
     broadcast_day = None
     googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
+    viewer_db_host = None
+    viewer_db_user = None
+    viewer_db_password = None
+    viewer_db_database = None
+    viewer_summary_text = None
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
     delete_ready = True # script will create a new broadcast endpoint after the delete process, an existing ready broadcasts will interfere since we're not creating seperate endpoints for each broadcast, so delete any ready broadcasts to prevent problems
@@ -196,6 +202,14 @@ if __name__ == '__main__':
                 args.home_dir = config['url_ssh_key_dir']
             if 'broadcast_status' in config:
                 args.status_file = config['broadcast_status']
+            if 'viewer_db_host' in config:
+                viewer_db_host = config['viewer_db_host']
+            if 'viewer_db_user' in config:
+                viewer_db_user = config['viewer_db_user']
+            if 'viewer_db_password' in config:
+                viewer_db_password = config['viewer_db_password']
+            if 'viewer_db_database' in config:
+                viewer_db_database = config['viewer_db_database']
             if 'email_send' in config:
                 email_send = config['email_send']
             if 'email_from_account' in config:
@@ -251,7 +265,14 @@ if __name__ == '__main__':
                             broadcast_time = datetime.strptime(args.broadcast_time, "%Y-%m-%d %H:%M:%S")
                     else:
                         broadcast_time = None
-                    send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.num_viewers, broadcast_time, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+                    if all([viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database]):
+                        try:
+                            viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)[0]
+                        except:
+                            print("Failed to get viewers summary from DB")
+                            if(num_from is not None and num_to is not None):
+                                sms.send_sms(num_from, num_to, ward + " failed to get viewers summary from DB!", verbose)
+                    send_email.send_total_views(args.email_from, args.email_to, ward, numViewers, args.num_viewers, broadcast_time, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose, viewer_summary_text)
                 else:
                     if(verbose): print("email_from or email_to argument is None")
             if(googleDoc is not None):

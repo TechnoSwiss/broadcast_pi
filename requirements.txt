@@ -10,6 +10,7 @@ pandas>=1.3.0
 matplotlib>=3.4.0
 mutagen
 twilio>=7.0.0
+mysql-connector-python>=8.0.0
 
 # Optional system integration (may require system-level packages)
 

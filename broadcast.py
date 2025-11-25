@@ -41,6 +41,7 @@ import local_stream as ls # local_stream.py local file
 import global_file as gf # local file for sharing globals between files
 import delete_event # local file for deleting broadcast
 import broadcast_thrd as bt # broadcast_thrd.py local file
+import viewer_db # viewer_db.py local file for getting broadcast viewer information from website
 
 import gspread # pip3 install gspread==4.0.0
 
@@ -205,6 +206,11 @@ if __name__ == '__main__':
     num_from = args.num_from
     num_to = args.num_to
     verbose = args.verbose
+    viewer_db_host = None
+    viewer_db_user = None
+    viewer_db_password = None
+    viewer_db_database = None
+    viewer_summary_text = None
 
     gf.killer = GracefulKiller()
     signal.signal(signal.SIGSEGV, signal_segfault)
@@ -352,6 +358,14 @@ if __name__ == '__main__':
                 args.extend_max = config['max_extend_minutes']
             if 'max_extend_control' in config:
                 args.extend_file = config['max_extend_control']
+            if 'viewer_db_host' in config:
+                viewer_db_host = config['viewer_db_host']
+            if 'viewer_db_user' in config:
+                viewer_db_user = config['viewer_db_user']
+            if 'viewer_db_password' in config:
+                viewer_db_password = config['viewer_db_password']
+            if 'viewer_db_database' in config:
+                viewer_db_database = config['viewer_db_database']
             if 'email_extended_data' in config:
                 args.extended = config['email_extended_data']
             if 'email_send' in config:
@@ -485,7 +499,7 @@ if __name__ == '__main__':
             instances = get_active_instances("broadcast@")
             if len(instances) > 1:
                 print(f"Found running instances: {instances}")
-                stop_other_instances("broadcast@", ward, exclude_instance=current_instance, num_from, num_to, verbose)
+                stop_other_instances("broadcast@", ward, current_instance, num_from, num_to, verbose)
         except:
             tb = traceback.format_exc()
             if(verbose): print(tb)
@@ -817,7 +831,14 @@ if __name__ == '__main__':
         print("e-mail concurrent viewer file")
         if(args.email_from is not None and args.email_to is not None):
             count_viewers.write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
-            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), uploaded_url, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+            if all([viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database]):
+                try:
+                    viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)[0]
+                except:
+                    print("Failed to get viewers summary from DB")
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, ward + " failed to get viewers summary from DB!", verbose)
+            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), uploaded_url, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose, viewer_summary_text)
 
     if(googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, current_id, ward, num_from, num_to, verbose)

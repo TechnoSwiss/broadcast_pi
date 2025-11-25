@@ -22,6 +22,7 @@ from email.mime.multipart import MIMEMultipart
 import sms # sms.py local file
 import count_viewers # count_viewers.py local file
 import delete_event # local file for deleting broadcast
+import viewer_db # viewer_db.py local file for getting broadcast viewer information from website
 
 EMAIL_PASS = 'email.pass'
 
@@ -47,7 +48,7 @@ def ordinal(n):
         suffix = 'th'
     return str(n) + suffix
 
-def send_total_views(email_from, email_to, ward, total_views, total_previous_views = 0, broadcast_time = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
+def send_total_views(email_from, email_to, ward, total_views, total_previous_views = 0, broadcast_time = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False, viewer_summary_text = None):
     try:
         if(verbose): print("creating total viewers email")
         sender_domain = email_from.split('@')[-1]
@@ -55,7 +56,14 @@ def send_total_views(email_from, email_to, ward, total_views, total_previous_vie
         # so need to be able to turn it into a comma seperated string
         if(type(email_to) == list):
             email_to = ",".join(email_to)
-        msg = MIMEText("There were " + str(total_views) + " total view(s) reported by YouTube." + (" An additional " + str(total_views - total_previous_views) + " view(s) since the live broadcast.") if total_previous_views is not None else "", 'plain')
+        body = "There were " + str(total_views) + " total view(s) reported by YouTube."
+        if total_previous_views is not None:
+            body += " An additional " + str(total_views - total_previous_views) + " view(s) since the live broadcast."
+
+        if viewer_summary_text:
+            body += "\n" + viewer_summary_text + "\n"
+
+        msg = MIMEText(body, 'plain')
         msg["From"] = email_from
         msg["To"] = email_to
         if(broadcast_time is None) :
@@ -103,7 +111,7 @@ def send_total_views(email_from, email_to, ward, total_views, total_previous_vie
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to send final viewers email!", verbose)
 
-def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views, broadcast_time = None, uploaded_url = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False):
+def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views, broadcast_time = None, uploaded_url = None, dkim_private_key = None, dkim_selector = None, num_from = None, num_to = None, verbose = False, viewer_summary_text = None):
     try:
         if(verbose): print("creating concurrent viewers file email")
         sender_domain = email_from.split('@')[-1]
@@ -124,7 +132,24 @@ def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views
         #msgAlternative = MIMEMultipart('alternative')
         #msgRoot.attach(msgAlternative)
 
-        msg.attach(MIMEText("There were " + str(total_views) + " view(s) reported by YouTube.\nFor breakdown of concurrent viewers during broadcast,\nplease open the attached file in a spreadsheet app. (Excel/Google Docs)." + ("" if uploaded_url is None else f"\n\nAn audio recording of this broadcast was generated,\nand is available at {uploaded_url}.\nPLEASE DOWNLOAD this file now as it will only be available online for 6 days."), 'plain'))
+        body = (
+            f"There were {total_views} view(s) reported by YouTube.\n"
+            f"For breakdown of concurrent viewers during the broadcast,\n"
+            f"please open the attached CSV file in a spreadsheet app (Excel or Google Docs).\n"
+        )
+
+        if uploaded_url:
+            body += (
+                f"\nAn audio recording of this broadcast was generated,\n"
+                f"and is available at {uploaded_url}.\n"
+                f"PLEASE DOWNLOAD this file now as it will only be available online for 6 days.\n"
+            )
+
+        # NEW: Add household summary, if provided
+        if viewer_summary_text:
+            body += "\n" + viewer_summary_text + "\n"
+
+        msg.attach(MIMEText(body, 'plain'))
 
         with open(csv_file) as fp:
             attachment = MIMEText(fp.read(), _subtype='csv')
@@ -206,6 +231,11 @@ if __name__ == '__main__':
     delete_current = False
     email_send = True
     recurring = True # is this a recurring broadcast, then create a new broadcast for next week
+    viewer_db_host = None
+    viewer_db_user = None
+    viewer_db_password = None
+    viewer_db_database = None
+    viewer_summary_text = None
 
     if(args.config_file is not None):
         if("/" in args.config_file):
@@ -247,6 +277,14 @@ if __name__ == '__main__':
                 args.start_time = config['broadcast_time'] # this value gets passed to the deletion routine
             if 'broadcast_length' in config:
                 args.run_time = config['broadcast_length'] # this value gets passed to the deletion routine
+            if 'viewer_db_host' in config:
+                viewer_db_host = config['viewer_db_host']
+            if 'viewer_db_user' in config:
+                viewer_db_user = config['viewer_db_user']
+            if 'viewer_db_password' in config:
+                viewer_db_password = config['viewer_db_password']
+            if 'viewer_db_database' in config:
+                viewer_db_database = config['viewer_db_database']
             if 'email_send' in config:
                 email_send = config['email_send'] # this value gets passed to the deletion routine
             if 'email_from_account' in config:

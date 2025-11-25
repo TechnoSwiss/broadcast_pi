@@ -21,6 +21,7 @@ import sms # sms.py local file
 import send_email # send_email.py localfile
 import global_file as gf # local file for sharing globals between files
 import delete_event # local file for deleting broadcast
+import viewer_db # viewer_db.py local file for getting broadcast viewer information from website
 
 import gspread # pip3 install gspread==4.0.0
 
@@ -205,6 +206,11 @@ if __name__ == '__main__':
     recurring = False
     googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
     uploaded_url = None # need to figure out if this exists, or at least accept it as an option
+    viewer_db_host = None
+    viewer_db_user = None
+    viewer_db_password = None
+    viewer_db_database = None
+    viewer_summary_text = None
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
 
@@ -232,6 +238,14 @@ if __name__ == '__main__':
                 args.delay_after = config['delete_time_delay']
             if 'delete_current' in config:
                 delete_current = config['delete_current']
+            if 'viewer_db_host' in config:
+                viewer_db_host = config['viewer_db_host']
+            if 'viewer_db_user' in config:
+                viewer_db_user = config['viewer_db_user']
+            if 'viewer_db_password' in config:
+                viewer_db_password = config['viewer_db_password']
+            if 'viewer_db_database' in config:
+                viewer_db_database = config['viewer_db_database']
             if 'email_send' in config:
                 email_send = config['email_send']
             if 'email_from_account' in config:
@@ -288,7 +302,14 @@ if __name__ == '__main__':
     numViewers = yt.get_view_count(youtube, current_id, ward, num_from, num_to, verbose)
     if(not gf.killer.kill_now and email_send):
         if(args.email_from is not None and args.email_to is not None):
-            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), uploaded_url, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+            if all([viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database]):
+                try:
+                    viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)[0]
+                except:
+                    print("Failed to get viewers summary from DB")
+                    if(num_from is not None and num_to is not None):
+                        sms.send_sms(num_from, num_to, ward + " failed to get viewers summary from DB!", verbose)
+            send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), uploaded_url, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose, viewer_summary_text)
 
     if(googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, current_id, ward, num_from, num_to, verbose)

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Broadcast Viewer Check-In</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-6">
+  <div class="max-w-lg mx-auto bg-white p-8 rounded-2xl shadow-xl space-y-6">
+    <h2 class="text-2xl font-bold text-center" id="redirectMsg">Redirecting in X seconds...</h2>
+
+    <p class="text-gray-700 text-sm text-center">This page will redirect you to the broadcast, but first we ask for a brief check-in to help maintain attendance records.</p>
+
+    <form id="viewerForm" class="space-y-4">
+      <div>
+        <label class="font-semibold">Number of people watching:</label>
+        <select id="viewerCount" name="viewerCount" class="w-full p-2 border rounded-lg" required>
+          <option value="" disabled selected>Select...</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5+</option>
+          <option value="-1" hidden>-1</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="font-semibold">Your name (optional):</label>
+        <input type="text" id="viewerName" name="viewerName" class="w-full p-2 border rounded-lg" placeholder="Enter your name" />
+      </div>
+
+      <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Continue to Broadcast</button>
+    </form>
+
+    <!-- Explanation moved to bottom -->
+    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 text-sm text-gray-700 rounded space-y-2 mt-6">
+      <div>
+        <strong>Why we collect this information:</strong><br>
+        According to the
+        <a class="text-blue-600 underline" href="https://www.churchofjesuschrist.org/study/manual/general-handbook-selections/33-records-and-reports?lang=eng" target="_blank">General Handbook, Section 33</a>, wards are asked to maintain accurate sacrament meeting attendance. This form helps count those viewing remotely.
+      </div>
+    </div>
+  </div>
+
+<script>
+const WARD_NAME = "Hillsboro_Stake"
+const SUBMIT_URL = "https://hillsborostake.org/broadcast/log_viewer.php";
+const LOOKUP = window.location.pathname.split("/").pop().replace(/\.[^/.]+$/, "");;
+console.log("Lookup =", LOOKUP)
+let YOUTUBE_ID = null;
+fetch("youtube_id.php?lookup="+ LOOKUP + "&ts=" + Date.now())
+  .then(r => r.text())
+  .then(t => { YOUTUBE_ID = t.trim(); });
+
+const REDIRECT_SECONDS = 20;
+let remaining = REDIRECT_SECONDS;
+const redirectEl = document.getElementById("redirectMsg");
+redirectEl.textContent = `Redirecting in ${remaining} seconds...`;
+setInterval(() => {
+  if (remaining > 0) {
+    remaining--;
+    redirectEl.textContent = `Redirecting in ${remaining} seconds...`;
+  }
+}, 1000);
+
+function getIP() {
+  return fetch("https://api.ipify.org?format=json").then(r => r.json()).then(d => d.ip);
+}
+
+document.getElementById("viewerForm").addEventListener("submit", async function (e) {
+  e.preventDefault();
+  const viewerCount = document.getElementById("viewerCount").value;
+  const viewerName = document.getElementById("viewerName").value;
+  const ip = await getIP().catch(() => "unknown");
+  const payload = { viewerCount, viewerName, ip, ward: WARD_NAME, youtubeID: YOUTUBE_ID };
+
+  //console.log("Submit =", WARD_NAME)
+  //console.log("YouTubeID =", YOUTUBE_ID)
+  saveCookies(viewerCount, viewerName);
+
+  fetch(SUBMIT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }).finally(() => {
+    window.location.assign("https://www.youtube.com/watch?v=" + YOUTUBE_ID);
+  });
+});
+
+// Auto-submit after 20 seconds of no interaction
+let inactivityTimer = setTimeout(autoSubmit, REDIRECT_SECONDS * 1000);
+function resetTimer() {
+  clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(autoSubmit, REDIRECT_SECONDS * 1000);
+  remaining = REDIRECT_SECONDS + 1;
+}
+function autoSubmit() {
+  const viewerCountField = document.getElementById("viewerCount");
+
+  // Default to 1 if not selected
+  if (!viewerCountField.value) viewerCountField.value = "-1";
+
+  document.getElementById("viewerForm").requestSubmit();
+}
+["click", "input", "keydown", "touchstart"].forEach(event => {
+  document.addEventListener(event, resetTimer);
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  const savedCount = getCookie("viewerCount");
+  const savedName = getCookie("viewerName");
+
+  if (savedCount) {
+    const countSelect = document.getElementById("viewerCount");
+    if (countSelect) countSelect.value = savedCount;
+  }
+
+  if (savedName) {
+    const nameInput = document.getElementById("viewerName");
+    if (nameInput) nameInput.value = savedName;
+  }
+});
+
+function saveCookies(viewerCount, viewerName) {
+  if (viewerName && viewerName.trim() !== "") {
+    setCookie("viewerCount", viewerCount, 365);
+  }
+  if (viewerCount !== "-1") {
+    setCookie("viewerName", viewerName, 365);
+  }
+}
+
+// Cookie helpers
+function setCookie(name, value, days) {
+  const d = new Date();
+  d.setTime(d.getTime() + (days*24*60*60*1000));
+  let expires = "expires="+ d.toUTCString();
+  document.cookie = name + "=" + value + ";" + expires + ";path=/";
+}
+
+function getCookie(name) {
+  let decoded = decodeURIComponent(document.cookie);
+  let ca = decoded.split(';');
+  name = name + "=";
+  for(let c of ca) {
+    while (c.charAt(0) == ' ') c = c.substring(1);
+    if (c.indexOf(name) == 0) return c.substring(name.length, c.length);
+  }
+  return "";
+}
+</script>
+</body>
+</html>
