@@ -26,7 +26,7 @@ NUM_RETRIES = 5
 #file is just a single ascii line plain text password
 SSH_RSA_KEY_PASS = 'ssh.pass'
 
-def update_ward_name(html_path, ward_name, num_from, num_to, verbose):
+def update_ward_name(html_path, ward, num_from, num_to, verbose):
     try:
         p = Path(html_path)
         text = p.read_text(encoding="utf-8")
@@ -35,7 +35,7 @@ def update_ward_name(html_path, ward_name, num_from, num_to, verbose):
         # const WARD_NAME = "anything_here"
         new_text = re.sub(
             r'const\s+WARD_NAME\s*=\s*"[^"]*"',
-            f'const WARD_NAME = "{ward_name}"',
+            f'const WARD_NAME = "{ward}"',
             text
         )
 
@@ -45,6 +45,26 @@ def update_ward_name(html_path, ward_name, num_from, num_to, verbose):
         print("Failed to update ward in link plage")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to update ward in link page!", verbose)
+
+def update_youtube_id(html_path, ward, youtube_id, num_from, num_to, verbose):
+    try:
+        p = Path(html_path)
+        text = p.read_text(encoding="utf-8")
+
+        # Replace:
+        # const YOUTUBE_ID = "anything_here"
+        new_text = re.sub(
+            r'const\s+YOUTUBE_ID\s*=\s*"[^"]*"',
+            f'const YOUTUBE_ID = "{youtube_id}"',
+            text
+        )
+
+        p.write_text(new_text, encoding="utf-8")
+    except:
+        if(verbose): print(traceback.format_exc())
+        print("Failed to update youtube id in link plage")
+        if(num_from is not None and num_to is not None):
+            sms.send_sms(num_from, num_to, ward + " failed to update youtube id in link page!", verbose)
 
 def get_my_uploads_list(youtube):
     # Retrieve the contentDetails part of the channel resource for the
@@ -83,7 +103,7 @@ def list_my_uploaded_videos(youtube, uploads_playlist_id):
             playlistitems_list_request, playlistitems_list_response)
     return video_list
 
-def update_live_broadcast_link(live_broadcast_id, args, ward, num_from, num_to, path_filename = None, filename = None, link_page = None, youtube_id_path = None, verbose = False):
+def update_live_broadcast_link(live_broadcast_id, args, ward, num_from, num_to, path_filename = None, filename = None, link_page = None, verbose = False):
     if(args.host_name is None):
         print("Nothing to update.")
         return()
@@ -96,25 +116,13 @@ def update_live_broadcast_link(live_broadcast_id, args, ward, num_from, num_to, 
 
     # regardless of the file that we're going to be uploading, we need to determine what that filename is going to be
     link_file_path = None
-    upload_link_file = False
     if(path_filename is not None):
         link_file_path = path_filename
     else:
         link_file_path = 'public_html/broadcast/' + (filename if (filename is not None) else ward.lower()) + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html'
 
-    youtube_id_file_path = None
-    if(youtube_id_path is not None):
-        p = Path(link_file_path).with_suffix('')
-        youtube_id_file_path = p.parent / youtube_id_path / p.name
-        if(verbose):
-            print(f"YouTube ID file target: {youtube_id_file_path}")
-        youtube_id_file = open('youtube_id', 'w')
-        youtube_id_file.write(live_broadcast_id)
-        youtube_id_file.close()
-
     local_link_file = 'link.html'
     if(link_page is None):
-        upload_link_file = True
         link_file = open(local_link_file, 'w')
         link_file.write('<head>\n')
         link_file.write('  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />\n')
@@ -129,18 +137,12 @@ def update_live_broadcast_link(live_broadcast_id, args, ward, num_from, num_to, 
         link_file.write('  <br><br>' + str(datetime.now()))
         link_file.write('</body>\n')
         link_file.close()
+    else:
+        local_link_file = link_page
+        update_ward_name(link_page, ward, num_from, num_to, verbose)
+        update_youtube_id(link_page, ward, live_broadcast_id, num_from, num_to, verbose)
 
     if os.path.exists(SSH_RSA_KEY_PASS) and os.path.exists(args.home_dir + '/.ssh/id_rsa'):
-        def remote_exists(sftp, path):
-            """Return True if remote file exists, False otherwise."""
-            try:
-                sftp.stat(path)
-                return True
-            except FileNotFoundError:
-                return False
-            except IOError:
-                return False
-
         for retry_num in range(NUM_RETRIES):
             exception = None
             tb = None
@@ -151,22 +153,8 @@ def update_live_broadcast_link(live_broadcast_id, args, ward, num_from, num_to, 
                     key = paramiko.RSAKey.from_private_key_file(args.home_dir + '/.ssh/id_rsa', password=ssh_pass)
                     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                     ssh.connect(args.host_name, username=args.user_name, pkey=key)
-
-                    if(link_page is not None):
-                        sftp = ssh.open_sftp()
-                        if remote_exists(sftp, link_file_path):
-                            if(verbose):
-                                print(f"Remote file already exists: {link_file_path}")
-                        else:
-                            upload_link_file = True
-                            local_link_file = link_page
-                            update_ward_name(link_page, ward, num_from, num_to, verbose)
-                        sftp.close()
                     with SCPClient(ssh.get_transport()) as scp:
-                        if(upload_link_file):
-                            scp.put(local_link_file, link_file_path)
-                        if(youtube_id_path is not None):
-                            scp.put('youtube_id', str(youtube_id_file_path))
+                        scp.put(local_link_file, link_file_path)
                 break
             except Exception as exc:
                 exception = exc
@@ -205,7 +193,6 @@ if __name__ == '__main__':
     num_to = args.num_to
     verbose = args.verbose
     link_page = None
-    youtube_id_path = None
 
     if(args.host_name is not None or args.user_name is not None or args.home_dir is not None):
         if(args.host_name is None or args.user_name is None or args.home_dir is None):
@@ -229,8 +216,8 @@ if __name__ == '__main__':
                 ward = config['broadcast_ward']
             if 'link_page' in config:
                 link_page = config['link_page']
-            if 'youtube_id_path' in config:
-                youtube_id_path = config['youtube_id_path']
+            if 'url_name' in config:
+                args.url_filename = config['url_name']
             if 'url_ssh_host' in config:
                 args.host_name = config['url_ssh_host']
             if 'url_ssh_username' in config:
@@ -267,4 +254,4 @@ if __name__ == '__main__':
         exit()
 
     #make sure link on hillsborostake.org is current
-    update_live_broadcast_link(videos[0], args, ward, num_from, num_to, args.html_filename, None, link_page, youtube_id_path, verbose)
+    update_live_broadcast_link(videos[0], args, ward, num_from, num_to, args.html_filename, args.url_filename, link_page, verbose)

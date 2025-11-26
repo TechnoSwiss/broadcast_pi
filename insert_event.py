@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import sys
 import traceback
 import json
 
@@ -12,6 +13,7 @@ import update_link # update_link.py local file
 import youtube_api as yt # youtube.py local file
 import sms # sms.py local file
 import update_status # update_status.py localfile
+import create_cards # create_cards.py local file for creating the youtube title cards
 
 def insert_event(youtube, title, description, start_time, run_time, thumbnail, ward, num_from = None, num_to = None, verbose = False, language = None, captions = False):
     current_id = yt.create_live_event(youtube, title, description, start_time, run_time, thumbnail, ward, num_from, num_to, verbose, language, captions)
@@ -52,6 +54,11 @@ if __name__ == '__main__':
     verbose = args.verbose
     broadcast_day = None
     description = None
+    link_page = None
+    base_image = None
+    card_title = None
+    card_subtitle = None
+    card_pause_subtitle = None
 
     if(args.config_file is not None and os.path.exists(args.config_file)):
         with open(args.config_file, "r") as configFile:
@@ -62,6 +69,14 @@ if __name__ == '__main__':
                 ward = config['broadcast_ward']
             if 'broadcast_title' in config:
                 args.title = config['broadcast_title']
+            if 'title_card_base_image' in config:
+                base_image = config['title_card_base_image']
+            if 'title_card_title' in config:
+                card_title = config['title_card_title']
+            if 'title_card_subtitle' in config:
+                card_subtitle = config['title_card_subtitle']
+            if 'title_card_pause_subtitle' in config:
+                card_pause_subtitle = config['title_card_pause_subtitle']
             if 'broadcast_title_card' in config:
                 args.thumbnail = config['broadcast_title_card']
             if 'broadcast_day' in config:
@@ -82,6 +97,8 @@ if __name__ == '__main__':
                 args.url_key = config['url_key']
             if 'url_name' in config:
                 args.url_filename = config['url_name']
+            if 'link_page' in config:
+                link_page = config['link_page']
             if 'url_ssh_host' in config:
                 args.host_name = config['url_ssh_host']
             if 'url_ssh_username' in config:
@@ -98,6 +115,28 @@ if __name__ == '__main__':
     if(ward is None):
         print("!!Ward is a required argument!!")
         exit()
+
+    script_dir = os.path.abspath(os.path.dirname(__file__))
+    tmp_dir = os.path.join(script_dir, "tmp")
+    if not os.path.isdir(tmp_dir):
+        os.makedirs(tmp_dir, exist_ok=True)
+
+    if all(v is not None for v in [base_image, card_title, card_subtitle, card_pause_subtitle]):
+        args.thumbnail = ward.lower() + ".jpg"
+        args.pause_image = ward.lower() + "_pause.jpg"
+        args.thumbnail = os.path.join(tmp_dir, args.thumbnail)
+        args.pause_image = os.path.join(tmp_dir, args.pause_image)
+        if not os.path.exists(args.thumbnail):
+            if(verbose):
+                print("Title card doesn't exist, creating")
+            create_cards.create_card(base_image, args.thumbnail, card_title, card_subtitle, ward, num_from, num_to, verbose)
+        if not os.path.exists(args.pause_image):
+            if(verbose):
+                    print("Pause card doesn't exist, creating")
+            create_cards.create_card(base_image, args.pause_image, card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
+    else:
+        print("!!If any of Base Image, Card Title, Card Subtitle, or Card Pause Subtitle are defined, ALL must be defined!!")
+        sys.exit("A card create element was defined, but not all elements were defined")
 
     credentials_file = ward.lower() + '.auth'
 
@@ -150,4 +189,4 @@ if __name__ == '__main__':
         if(args.status_file is not None):
             update_status.update("start", start_time, stop_time, args.status_file, ward, num_from, num_to, verbose)
         #make sure link on web host is current
-        update_link.update_live_broadcast_link(current_id, args, ward, num_from, num_to, args.html_filename, args.url_filename)
+        update_link.update_live_broadcast_link(current_id, args, ward, num_from, num_to, args.html_filename, args.url_filename, link_page, verbose)

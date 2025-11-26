@@ -1,13 +1,13 @@
 #!/usr/bin/python3
 
-import sys
-import os
-import traceback
 import argparse
+import os
+import sys
 import traceback
 import json
 from datetime import datetime, timedelta
 import time
+from pathlib import Path
 
 import smtplib
 import imaplib
@@ -23,6 +23,7 @@ import sms # sms.py local file
 import count_viewers # count_viewers.py local file
 import delete_event # local file for deleting broadcast
 import viewer_db # viewer_db.py local file for getting broadcast viewer information from website
+import create_cards # create_cards.py local file for creating the youtube title cards
 
 EMAIL_PASS = 'email.pass'
 
@@ -205,6 +206,8 @@ def send_viewer_file(csv_file, png_file, email_from, email_to, ward, total_views
             sms.send_sms(num_from, num_to, ward + " failed to send current viewers with CSV email!", verbose)
 
 if __name__ == '__main__':
+    config_file = None
+
     parser = argparse.ArgumentParser(description='Email CSV file')
     parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
     parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
@@ -231,6 +234,10 @@ if __name__ == '__main__':
     delete_current = False
     email_send = True
     recurring = True # is this a recurring broadcast, then create a new broadcast for next week
+    base_image = None
+    card_title = None
+    card_subtitle = None
+    card_pause_subtitle = None
     viewer_db_host = None
     viewer_db_user = None
     viewer_db_password = None
@@ -242,7 +249,7 @@ if __name__ == '__main__':
             config_file = args.config_file
         else:
             config_file =  os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file
-    if(verbose): print('Config file : ' + config_file)
+        if(verbose): print('Config file : ' + config_file)
     if(config_file is not None and os.path.exists(config_file)):
         with open(config_file, "r") as configFile:
             config = json.load(configFile)
@@ -252,6 +259,14 @@ if __name__ == '__main__':
                 ward = config['broadcast_ward']
             if 'broadcast_title' in config:
                 args.title = config['broadcast_title'] # this value gets passed to the deletion routine
+            if 'title_card_base_image' in config:
+                base_image = config['title_card_base_image']
+            if 'title_card_title' in config:
+                card_title = config['title_card_title']
+            if 'title_card_subtitle' in config:
+                card_subtitle = config['title_card_subtitle']
+            if 'title_card_pause_subtitle' in config:
+                card_pause_subtitle = config['title_card_pause_subtitle']
             if 'broadcast_title_card' in config:
                 args.thumbnail = config['broadcast_title_card'] # this value gets passed to the deletion routine
             if 'broadcast_recurring' in config:
@@ -320,6 +335,28 @@ if __name__ == '__main__':
         print("!!Delete broadcast setup requires using --broadcast-time!!")
         exit()
 
+    script_dir = os.path.abspath(os.path.dirname(__file__))
+    tmp_dir = os.path.join(script_dir, "tmp")
+    if not os.path.isdir(tmp_dir):
+        os.makedirs(tmp_dir, exist_ok=True)
+
+    if all(v is not None for v in [base_image, card_title, card_subtitle, card_pause_subtitle]):
+        args.thumbnail = ward.lower() + ".jpg"
+        args.pause_image = ward.lower() + "_pause.jpg"
+        args.thumbnail = os.path.join(tmp_dir, args.thumbnail)
+        args.pause_image = os.path.join(tmp_dir, args.pause_image)
+        if not os.path.exists(args.thumbnail):
+            if(verbose):
+                print("Title card doesn't exist, creating")
+            create_cards.create_card(base_image, args.thumbnail, card_title, card_subtitle, ward, num_from, num_to, verbose)
+        if not os.path.exists(args.pause_image):
+            if(verbose):
+                    print("Pause card doesn't exist, creating")
+            create_cards.create_card(base_image, args.pause_image, card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
+    else:
+        print("!!If any of Base Image, Card Title, Card Subtitle, or Card Pause Subtitle are defined, ALL must be defined!!")
+        sys.exit("A card create element was defined, but not all elements were defined")
+
     if(args.broadcast_date is not None):
         broadcast_time = datetime.strptime(args.broadcast_date + " 12:00:00", "%m/%d/%Y %H:%M:%S")
     elif(args.broadcast_time is not None):
@@ -330,7 +367,7 @@ if __name__ == '__main__':
         broadcast_time = None
 
     if(args.viewers_file is not None and args.image_file is None):
-        args.image_file = ward.lower() + '_viewers.png'
+        args.image_file = str(Path(args.viewers_file).with_suffix('.png'))
         count_viewers.write_viewer_image(args.viewers_file, args.image_file, ward, num_from, num_to, verbose)
 
     if(args.viewers_file is not None and args.image_file is not None):

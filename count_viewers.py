@@ -164,6 +164,7 @@ def count_viewers(credentials_file, viewers_file, graph_file, youtube, videoID, 
             sms.send_sms(num_from, num_to, ward + " failed to count current viewers!", verbose)
 
 if __name__ == '__main__':
+    config_file = None
 
     # Arguments listed as 'ARGUMENT NOT USED' are included because the args list needs them when passed to the delete_event function, they should not be used and need to pass as None
     parser = argparse.ArgumentParser(description='Save YouTube viewer numbers to file, every 30 seconds.')
@@ -211,6 +212,7 @@ if __name__ == '__main__':
     viewer_db_password = None
     viewer_db_database = None
     viewer_summary_text = None
+    start_time = args.start_time
 
     delete_current = True # in keeping with guidence not to record sessions, delete the current session
 
@@ -226,7 +228,7 @@ if __name__ == '__main__':
             config_file = args.config_file
         else:
             config_file =  os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file
-    if(verbose): print('Config file : ' + config_file)
+        if(verbose): print('Config file : ' + config_file)
     if(config_file is not None and os.path.exists(config_file)):
         with open(config_file, "r") as configFile:
             config = json.load(configFile)
@@ -278,6 +280,14 @@ if __name__ == '__main__':
     viewers_file = ward.lower() + (('_' + current_id) if current_id is not None else '') + '_viewers.csv'
     graph_file = ward.lower() + (('_' + current_id) if current_id is not None else '') + '_viewers.png'
 
+    script_dir = os.path.abspath(os.path.dirname(__file__))
+    tmp_dir = os.path.join(script_dir, "tmp")
+    if not os.path.isdir(tmp_dir):
+        os.makedirs(tmp_dir, exist_ok=True)
+
+    viewers_file = os.path.join(tmp_dir, viewers_file)
+    graph_file = os.path.join(tmp_dir, graph_file)
+
     if(args.test_image):
         write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
         exit()
@@ -286,6 +296,10 @@ if __name__ == '__main__':
         print("!!Current ID is a required argument!!")
         exit()
 
+    if(start_time is None):
+        start_time = datetime.now()
+    else:
+        start_time = datetime.strptime(datetime.now().strftime("%m/%d/%Y ") + start_time, "%m/%d/%Y %H:%M:%S")
 
     #authenticate with YouTube API
     youtube = google_auth.get_authenticated_service(credentials_file, ward, num_from, num_to, 'youtube', 'v3', verbose)
@@ -304,7 +318,7 @@ if __name__ == '__main__':
         if(args.email_from is not None and args.email_to is not None):
             if all([viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database]):
                 try:
-                    viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)[0]
+                    viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose)[0]
                 except:
                     print("Failed to get viewers summary from DB")
                     if(num_from is not None and num_to is not None):

@@ -42,6 +42,7 @@ import global_file as gf # local file for sharing globals between files
 import delete_event # local file for deleting broadcast
 import broadcast_thrd as bt # broadcast_thrd.py local file
 import viewer_db # viewer_db.py local file for getting broadcast viewer information from website
+import create_cards # create_cards.py local file for creating the youtube title cards
 
 import gspread # pip3 install gspread==4.0.0
 
@@ -124,7 +125,7 @@ def check_report_missed_sms(ward, num_from = None, num_to = None, verbose = None
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " broadcast had (" + str(gf.sms_missed) + ") missed SMS messages!", verbose)
 
-def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_filename, num_from = None, num_to = None, verbose = False):
+def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_filename, link_page = None, num_from = None, num_to = None, verbose = False):
      # want to make sure that the current live broadcast is the one we think it is 
     time.sleep(15) # it takes a few seconds for the video to go live, so wait before we start checking
     verify_broadcast = False
@@ -144,7 +145,7 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
         if(live_id is not None and live_id != current_id):
             print("Live ID doesnt't match current ID, updating link")
             print(current_id + " => " + live_id)
-            update_link.update_live_broadcast_link(live_id, args, ward, num_from, num_to, html_filename, url_filename)
+            update_link.update_live_broadcast_link(live_id, args, ward, num_from, num_to, html_filename, url_filename, link_page, verbose)
             if(num_from is not None and num_to is not None):
                 sms.send_sms(num_from, num_to, ward + " link ID updated!", verbose)
             current_id = live_id
@@ -158,12 +159,8 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
 
 if __name__ == '__main__':
   config_file = None
-  verbose = False
-  num_from = None
-  num_to = None
   audio_record = False
   pause_music = None
-  ward = "Undefined"
 
   try:
     parser = argparse.ArgumentParser(description='Broadcast Live Ward Meeting to YouTube')
@@ -256,6 +253,11 @@ if __name__ == '__main__':
     local_stream_control = None
     preset_file = None
     preset_status_file = None
+    link_page = None
+    base_image = None
+    card_title = None
+    card_subtitle = None
+    card_pause_subtitle = None
     googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
 
     testing = True if os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/testing') else False
@@ -276,6 +278,14 @@ if __name__ == '__main__':
                 ward = config['broadcast_ward']
             if 'broadcast_title' in config:
                 args.title = config['broadcast_title']
+            if 'title_card_base_image' in config:
+                base_image = config['title_card_base_image']
+            if 'title_card_title' in config:
+                card_title = config['title_card_title']
+            if 'title_card_subtitle' in config:
+                card_subtitle = config['title_card_subtitle']
+            if 'title_card_pause_subtitle' in config:
+                card_pause_subtitle = config['title_card_pause_subtitle']
             if 'broadcast_title_card' in config:
                 args.thumbnail = config['broadcast_title_card']
             if 'broadcast_pause_card' in config:
@@ -322,6 +332,8 @@ if __name__ == '__main__':
                 url_randomize = config['url_randomize']
             if 'url_name' in config:
                 args.url_filename = config['url_name']
+            if 'link_page' in config:
+                link_page = config['link_page']
             if 'url_ssh_host' in config:
                 args.host_name = config['url_ssh_host']
             if 'url_ssh_username' in config:
@@ -402,6 +414,31 @@ if __name__ == '__main__':
 
     viewers_file = ward.lower() + '_viewers.csv'
     graph_file = ward.lower() + '_viewers.png'
+
+    script_dir = os.path.abspath(os.path.dirname(__file__))
+    tmp_dir = os.path.join(script_dir, "tmp")
+    if not os.path.isdir(tmp_dir):
+        os.makedirs(tmp_dir, exist_ok=True)
+
+    viewers_file = os.path.join(tmp_dir, viewers_file)
+    graph_file = os.path.join(tmp_dir, graph_file)
+
+    if all(v is not None for v in [base_image, card_title, card_subtitle, card_pause_subtitle]):
+        args.thumbnail = ward.lower() + ".jpg"
+        args.pause_image = ward.lower() + "_pause.jpg"
+        args.thumbnail = os.path.join(tmp_dir, args.thumbnail)
+        args.pause_image = os.path.join(tmp_dir, args.pause_image)
+        if not os.path.exists(args.thumbnail):
+            if(verbose):
+                print("Title card doesn't exist, creating")
+            create_cards.create_card(base_image, args.thumbnail, card_title, card_subtitle, ward, num_from, num_to, verbose)
+        if not os.path.exists(args.pause_image):
+            if(verbose):
+                    print("Pause card doesn't exist, creating")
+            create_cards.create_card(base_image, args.pause_image, card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
+    else:
+        print("!!If any of Base Image, Card Title, Card Subtitle, or Card Pause Subtitle are defined, ALL must be defined!!")
+        sys.exit("A card create element was defined, but not all elements were defined")
 
     start_time, gf.stop_time = update_status.get_start_stop(args.start_time, args.run_time, None, ward, num_from, num_to, verbose)
 
@@ -548,7 +585,7 @@ if __name__ == '__main__':
         insert_event.bind_event(youtube, current_id, ward, num_from, num_to, verbose)
 
     #make sure link on web host is current
-    update_link.update_live_broadcast_link(current_id, args, ward, num_from, num_to, args.html_filename, args.url_filename)
+    update_link.update_live_broadcast_link(current_id, args, ward, num_from, num_to, args.html_filename, args.url_filename, link_page, verbose)
 
     # check if we have music defined to play during the pause
     pause_audio_cmd = "-re -f lavfi -i anullsrc"
@@ -593,7 +630,7 @@ if __name__ == '__main__':
     count_viewers_thrd.daemon = True #set this as a daemon thread so it will end when the script does (instead of keeping script open)
     count_viewers_thrd.start()
     print("Starting stream...")
-    verify_broadcast = threading.Thread(target = verify_live_broadcast, args = (youtube, ward, args, current_id, args.html_filename, args.url_filename, num_from, num_to, verbose), name="VerifyLiveBroadcastThread")
+    verify_broadcast = threading.Thread(target = verify_live_broadcast, args = (youtube, ward, args, current_id, args.html_filename, args.url_filename, link_page, num_from, num_to, verbose), name="VerifyLiveBroadcastThread")
     verify_broadcast.daemon = True
     verify_broadcast.start()
     if(local_stream is not None and local_stream_output is not None and local_stream_control is not None):
@@ -833,7 +870,7 @@ if __name__ == '__main__':
             count_viewers.write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
             if all([viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database]):
                 try:
-                    viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)[0]
+                    viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose)[0]
                 except:
                     print("Failed to get viewers summary from DB")
                     if(num_from is not None and num_to is not None):

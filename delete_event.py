@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import sys
 import traceback
 import json
 import subprocess
@@ -18,6 +19,7 @@ import update_status # update_status.py localfile
 import insert_event # insert_event.py local file
 import global_file as gf # local file for sharing globals between files
 import viewer_db # viewer_db.py local file for getting broadcast viewer information from website
+import create_cards # create_cards.py local file for creating the youtube title cards
 
 import gspread # pip3 install gspread==4.0.0
 
@@ -93,6 +95,8 @@ def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_del
             sms.send_sms(num_from, num_to, ward + " had a failure setting up the delete event!", verbose)
 
 if __name__ == '__main__':
+    config_file = None
+
     parser = argparse.ArgumentParser(description='Insert Live Broadcast in YouTube Live list.')
     parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
     parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
@@ -132,6 +136,11 @@ if __name__ == '__main__':
     email_send = args.email_send
     broadcast_day = None
     googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
+    link_page = None
+    base_image = None
+    card_title = None
+    card_subtitle = None
+    card_pause_subtitle = None
     viewer_db_host = None
     viewer_db_user = None
     viewer_db_password = None
@@ -162,7 +171,7 @@ if __name__ == '__main__':
             config_file = args.config_file
         else:
             config_file =  os.path.abspath(os.path.dirname(__file__)) + "/" + args.config_file
-    if(verbose): print('Config file : ' + config_file)
+        if(verbose): print('Config file : ' + config_file)
     if(config_file is not None and os.path.exists(config_file)):
         with open(config_file, "r") as configFile:
             config = json.load(configFile)
@@ -174,6 +183,14 @@ if __name__ == '__main__':
                 ward = config['broadcast_ward']
             if 'broadcast_title' in config:
                 args.title = config['broadcast_title']
+            if 'title_card_base_image' in config:
+                base_image = config['title_card_base_image']
+            if 'title_card_title' in config:
+                card_title = config['title_card_title']
+            if 'title_card_subtitle' in config:
+                card_subtitle = config['title_card_subtitle']
+            if 'title_card_pause_subtitle' in config:
+                card_pause_subtitle = config['title_card_pause_subtitle']
             if 'broadcast_title_card' in config:
                 args.thumbnail = config['broadcast_title_card']
             if 'broadcast_day' in config:
@@ -200,6 +217,8 @@ if __name__ == '__main__':
                 args.user_name = config['url_ssh_username']
             if 'url_ssh_key_dir' in config:
                 args.home_dir = config['url_ssh_key_dir']
+            if 'link_page' in config:
+                link_page = config['link_page']
             if 'broadcast_status' in config:
                 args.status_file = config['broadcast_status']
             if 'viewer_db_host' in config:
@@ -231,6 +250,28 @@ if __name__ == '__main__':
     if(ward is None):
         print("!!Ward is a required argument!!")
         exit()
+
+    script_dir = os.path.abspath(os.path.dirname(__file__))
+    tmp_dir = os.path.join(script_dir, "tmp")
+    if not os.path.isdir(tmp_dir):
+        os.makedirs(tmp_dir, exist_ok=True)
+
+    if all(v is not None for v in [base_image, card_title, card_subtitle, card_pause_subtitle]):
+        args.thumbnail = ward.lower() + ".jpg"
+        args.pause_image = ward.lower() + "_pause.jpg"
+        args.thumbnail = os.path.join(tmp_dir, args.thumbnail)
+        args.pause_image = os.path.join(tmp_dir, args.pause_image)
+        if not os.path.exists(args.thumbnail):
+            if(verbose):
+                print("Title card doesn't exist, creating")
+            create_cards.create_card(base_image, args.thumbnail, card_title, card_subtitle, ward, num_from, num_to, verbose)
+        if not os.path.exists(args.pause_image):
+            if(verbose):
+                    print("Pause card doesn't exist, creating")
+            create_cards.create_card(base_image, args.pause_image, card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
+    else:
+        print("!!If any of Base Image, Card Title, Card Subtitle, or Card Pause Subtitle are defined, ALL must be defined!!")
+        sys.exit("A card create element was defined, but not all elements were defined")
 
     if(testing):
         print("!!testing is active!!")
@@ -267,8 +308,10 @@ if __name__ == '__main__':
                         broadcast_time = None
                     if all([viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database]):
                         try:
-                            viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)[0]
+                            viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, broadcast_time, num_from, num_to, verbose)[0]
                         except:
+                            if(verbose) : print(traceback.format_exc())
+                            gf.log_exception(traceback.format_exc(), "failed to get viewers summary from DB")
                             print("Failed to get viewers summary from DB")
                             if(num_from is not None and num_to is not None):
                                 sms.send_sms(num_from, num_to, ward + " failed to get viewers summary from DB!", verbose)
@@ -354,4 +397,4 @@ if __name__ == '__main__':
             if(num_from is not None and num_to is not None): sms.send_sms(num_from, num_to, ward + " failed to create broadcast for next week!", verbose)
 
         # make sure link on web host is current
-        update_link.update_live_broadcast_link(current_id, args, ward, num_from, num_to, args.html_filename, args.url_filename, verbose)
+        update_link.update_live_broadcast_link(current_id, args, ward, num_from, num_to, args.html_filename, args.url_filename, link_page, verbose)
