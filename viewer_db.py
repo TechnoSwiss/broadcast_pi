@@ -128,7 +128,7 @@ def find_name_for_ip(ip_address, viewer_db_host, viewer_db_user, viewer_db_passw
     finally:
         conn.close()
 
-def mark_entries_reported(entry_ids, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, value = 1, num_from = None, num_to = None, verbose = False):
+def mark_entries_reported(entry_ids, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, value = 1, ward = None, num_from = None, num_to = None, verbose = False):
     """
     Mark all given attendance row IDs as reported = 1.
     """
@@ -186,7 +186,7 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
 
     # Mark early rows as reported but do not include them in summary
     if early_rows:
-        mark_entries_reported([r["id"] for r in early_rows], viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, 2, num_from, num_to, verbose)
+        mark_entries_reported([r["id"] for r in early_rows], viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, 2, ward, num_from, num_to, verbose)
 
     # If nothing valid remains, return early
     if not valid_rows:
@@ -292,7 +292,7 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
     summary_text = "\n".join(lines)
 
     # Mark all rows as reported
-    mark_entries_reported(all_ids, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, 1, num_from, num_to, verbose)
+    mark_entries_reported(all_ids, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, 1, ward, num_from, num_to, verbose)
 
     return summary_text, dict(name_counts), len(all_ids)
 
