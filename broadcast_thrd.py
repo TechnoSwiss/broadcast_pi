@@ -230,11 +230,16 @@ def broadcast(youtube, current_id, start_time, ward, camera_ip, broadcast_stream
             # touch the audio_record_control file so we can show recording is active in the web interface
             open(audio_record_control, "a").close()
 
+
+        script_dir = os.path.abspath(os.path.dirname(__file__))
+        tmp_dir = os.path.join(script_dir, "tmp")
+        mp3_base_filename = os.path.join(tmp_dir, (args.url_filename if args.url_filename is not None else ward) + "_%Y-%m-%d_%H-%M-%S.mp3")
+        if(verbose): print(f"MP3 Output File : {mp3_base_filename}")
         if(ffmpeg_record_audio != ffmpeg_record_audio_last):
             broadcast_stream_final = list(broadcast_stream)
             if(ffmpeg_record_audio):
                 for index in range(len(broadcast_stream)):
-                    broadcast_stream_final[index] = broadcast_stream[index] + f" -vn -acodec libmp3lame -q:a 5 -f segment -segment_time 9999999 -strftime 1 \"{args.url_filename if args.url_filename is not None else ward}_%Y-%m-%d_%H-%M-%S.mp3\""
+                    broadcast_stream_final[index] = broadcast_stream[index] + f" -vn -acodec libmp3lame -q:a 5 -f segment -segment_time 9999999 -strftime 1 \"{mp3_base_filename}\""
             ffmpeg_record_audio_last = ffmpeg_record_audio
 
         if(ffmpeg_record_audio): gf.audio_recorded = True

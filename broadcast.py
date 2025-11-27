@@ -255,8 +255,10 @@ if __name__ == '__main__':
     preset_status_file = None
     link_page = None
     base_image = None
+    card_output = None
     card_title = None
     card_subtitle = None
+    card_pause_title = None
     card_pause_subtitle = None
     googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
 
@@ -280,10 +282,14 @@ if __name__ == '__main__':
                 args.title = config['broadcast_title']
             if 'title_card_base_image' in config:
                 base_image = config['title_card_base_image']
+            if 'title_card_filename' in config:
+                card_output = config['title_card_filename']
             if 'title_card_title' in config:
                 card_title = config['title_card_title']
             if 'title_card_subtitle' in config:
                 card_subtitle = config['title_card_subtitle']
+            if 'title_card_pause_title' in config:
+                card_pause_title = config['title_card_pause_title']
             if 'title_card_pause_subtitle' in config:
                 card_pause_subtitle = config['title_card_pause_subtitle']
             if 'broadcast_title_card' in config:
@@ -424,8 +430,16 @@ if __name__ == '__main__':
     graph_file = os.path.join(tmp_dir, graph_file)
 
     if all(v is not None for v in [base_image, card_title, card_subtitle, card_pause_subtitle]):
-        args.thumbnail = ward.lower() + ".jpg"
-        args.pause_image = ward.lower() + "_pause.jpg"
+        if(card_output is not None):
+            args.thumbnail = card_output.lower() + ".jpg"
+            args.pause_image = card_output.lower() + "_pause.jpg"
+        else:
+            if(args.url_filename is not None):
+                args.thumbnail = args.url_filename.lower() + ".jpg"
+                args.pause_image = args.url_filename.lower() + "_pause.jpg"
+            else:
+                args.thumbnail = ward.lower() + ".jpg"
+                args.pause_image = ward.lower() + "_pause.jpg"
         args.thumbnail = os.path.join(tmp_dir, args.thumbnail)
         args.pause_image = os.path.join(tmp_dir, args.pause_image)
         if not os.path.exists(args.thumbnail):
@@ -435,7 +449,7 @@ if __name__ == '__main__':
         if not os.path.exists(args.pause_image):
             if(verbose):
                     print("Pause card doesn't exist, creating")
-            create_cards.create_card(base_image, args.pause_image, card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
+            create_cards.create_card(base_image, args.pause_image, card_pause_title if card_pause_title is not None else card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
     else:
         print("!!If any of Base Image, Card Title, Card Subtitle, or Card Pause Subtitle are defined, ALL must be defined!!")
         sys.exit("A card create element was defined, but not all elements were defined")
@@ -510,7 +524,7 @@ if __name__ == '__main__':
         os.remove(args.extend_file)
 
     # remove any audio recordings or partial recordings so they don't get concatinated into the final result if we do a recording
-    mp3_base_path = os.path.abspath(os.path.dirname(__file__))
+    mp3_base_path = tmp_dir
     mp3_base_filename = args.url_filename if args.url_filename is not None else ward
     if(verbose): print(f"MP3 Base Path : {mp3_base_path}")
     try:
@@ -520,6 +534,7 @@ if __name__ == '__main__':
             print("MP3 file(s) exists, removing")
             if(verbose): print(f"MP3 Files for removal: {remove_old_recordings}")
         for remove in remove_old_recordings:
+            remove = os.path.join(mp3_base_path, remove)
             os.remove(remove)
     except:
         tb = traceback.format_exc()
@@ -609,9 +624,9 @@ if __name__ == '__main__':
             index += 1
 
         with open(mp3_base_path + "/mp3_play_list", "w") as f:
-            f.writelines("file '" + os.path.join(mp3_base_path, fn.replace("'", "'\\''")) + "'\n" for fn in playlist)
+            f.writelines("file '" + os.path.join(script_dir, fn.replace("'", "'\\''")) + "'\n" for fn in playlist)
         if(verbose): print(f"Pause music playlist : {playlist}")
-        pause_audio_cmd = "-f concat -safe 0 -re -i mp3_play_list"
+        pause_audio_cmd = "-f concat -safe 0 -re -i tmp/mp3_play_list"
 
     #kick off broadcast
     ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
@@ -835,7 +850,9 @@ if __name__ == '__main__':
                     for mp3 in mp3_files:
                         f.write(f"file '{os.path.join(mp3_base_path, mp3)}'\n")
 
-                outputfile = f"{mp3_base_filename}_{datetime.now().strftime('%Y-%m-%d')}.mp3"
+                outputfile = f"{mp3_base_filename}_{datetime.now().strftime('%Y-%m-%d')}"
+                outputfile = os.path.join(mp3_base_path, outputfile)
+                outputfile = outputfile + ".mp3"
 
                 subprocess.run(["ffmpeg", "-f", "concat", "-safe", "0", "-i", mp3_base_path + "/mp3_file_list", "-c", "copy", outputfile],
                     stdout=subprocess.DEVNULL,
@@ -864,7 +881,7 @@ if __name__ == '__main__':
     # and a number of those email can be generated, look for a control
     # file and don't send emails if control file is present
     numViewers = yt.get_view_count(youtube, current_id, ward, num_from, num_to, verbose)
-    if(not testing and email_send):
+    if(not gf.killer.kill_now and not testing and email_send):
         print("e-mail concurrent viewer file")
         if(args.email_from is not None and args.email_to is not None):
             count_viewers.write_viewer_image(viewers_file, graph_file, ward, num_from, num_to, verbose)
@@ -877,7 +894,7 @@ if __name__ == '__main__':
                         sms.send_sms(num_from, num_to, ward + " failed to get viewers summary from DB!", verbose)
             send_email.send_viewer_file(viewers_file, graph_file, args.email_from, args.email_to, ward, numViewers, datetime.now(), uploaded_url, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose, viewer_summary_text)
 
-    if(googleDoc is not None):
+    if(not gf.killer.kill_now and googleDoc is not None):
         sheet, column, insert_row = yt.get_sheet_row_and_column(credentials_file, googleDoc, current_id, ward, num_from, num_to, verbose)
         sheet.update_cell(gf.GD_VIEWS_ROW,column, "Views = " + str(numViewers))
 

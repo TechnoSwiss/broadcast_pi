@@ -3,7 +3,9 @@
     "broadcast_ward": "Ward",
     "broadcast_title": "Ward Live Stream",
     "title_card_base_image": "title_card.jpg",
+    "title_card_filename": "ward_name",
     "title_card_title": "Welcome\nWard Name",
+    "title_card_pause_title": "Ward"
     "title_card_subtitle": "Online Broadcast",
     "title_card_pause_subtitle": "The broadcast has been paused",
     "broadcast_title_card": "thumbnail.jpg",

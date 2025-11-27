@@ -25,13 +25,14 @@ import gspread # pip3 install gspread==4.0.0
 
 def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose = False):
     try:
-        deletion_command = 'echo ' + os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
+        #deletion_command = 'echo ' + os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
+        deletion_command = os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
         if(args.config_file is not None):
             deletion_command = deletion_command + ' -c ' + args.config_file
         if(ward is not None):
             deletion_command = deletion_command + ' -w ' + ward
         if(args.title is not None):
-            deletion_command = deletion_command + ' -i \\"' + args.title.replace("\'", "\\\'") + '\\"'
+            deletion_command = deletion_command + ' -i "' + args.title.replace("\'", "\\\'") + '"'
         if(args.status_file is not None):
             deletion_command = deletion_command + ' -S ' + args.status_file
         if(args.thumbnail is not None):
@@ -54,7 +55,7 @@ def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_del
             deletion_command = deletion_command + ' -t ' + args.run_time
         if(args.delete_control is not None):
             deletion_command = deletion_command + ' -D ' + args.delete_control
-        deletion_command = deletion_command + ' -C=\\"' + current_id + '\\"'
+        deletion_command = deletion_command + ' -C="' + current_id + '"'
         deletion_command = deletion_command + ' --num-viewers ' + str(num_viewers)
         if(email_send):
             deletion_command = deletion_command + ' --email-send '
@@ -78,16 +79,15 @@ def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_del
         if(recurring):
             deletion_command = deletion_command + ' -I'
 
-        deletion_command = deletion_command + ' --broadcast-time \\"' + datetime.now().strftime("%m/%d/%Y %H:%M:%S") + '\\"'
+        deletion_command = deletion_command + ' --broadcast-time "' + datetime.now().strftime("%m/%d/%Y %H:%M:%S") + '"'
 
         if run_deletion_time < datetime.now():
             run_deletion_time = datetime.now() + timedelta(seconds=30)
             if(verbose): print(f"Delete time is in the past, setting new deletion time to {run_deletion_time.strftime('%H:%M %Y-%m-%d')}")
 
-        if(verbose) : print(deletion_command.replace('\\"', '"'))
-        ps = subprocess.Popen(split(deletion_command), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        subprocess.run(["at", run_deletion_time.strftime("%H:%M %Y-%m-%d")], stdin=ps.stdout)
-        ps.wait()
+        if(verbose) : print(deletion_command)
+        wrapped_cmd = f"""{deletion_command} 2>&1 | logger -t broadcast.at\n"""
+        subprocess.run(["at", run_deletion_time.strftime("%H:%M %Y-%m-%d")], input=wrapped_cmd.encode("utf-8"))
     except:
         if(verbose): print(traceback.format_exc())
         print("Failure setting up delete event")
@@ -138,8 +138,10 @@ if __name__ == '__main__':
     googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
     link_page = None
     base_image = None
+    card_output = None
     card_title = None
     card_subtitle = None
+    card_pause_title = None
     card_pause_subtitle = None
     viewer_db_host = None
     viewer_db_user = None
@@ -185,10 +187,14 @@ if __name__ == '__main__':
                 args.title = config['broadcast_title']
             if 'title_card_base_image' in config:
                 base_image = config['title_card_base_image']
+            if 'title_card_filename' in config:
+                card_output = config['title_card_filename']
             if 'title_card_title' in config:
                 card_title = config['title_card_title']
             if 'title_card_subtitle' in config:
                 card_subtitle = config['title_card_subtitle']
+            if 'title_card_pause_title' in config:
+                card_pause_title = config['title_card_pause_title']
             if 'title_card_pause_subtitle' in config:
                 card_pause_subtitle = config['title_card_pause_subtitle']
             if 'broadcast_title_card' in config:
@@ -257,8 +263,16 @@ if __name__ == '__main__':
         os.makedirs(tmp_dir, exist_ok=True)
 
     if all(v is not None for v in [base_image, card_title, card_subtitle, card_pause_subtitle]):
-        args.thumbnail = ward.lower() + ".jpg"
-        args.pause_image = ward.lower() + "_pause.jpg"
+        if(card_output is not None):
+            args.thumbnail = card_output.lower() + ".jpg"
+            args.pause_image = card_output.lower() + "_pause.jpg"
+        else:
+            if(args.url_filename is not None):
+                args.thumbnail = args.url_filename.lower() + ".jpg"
+                args.pause_image = args.url_filename.lower() + "_pause.jpg"
+            else:
+                args.thumbnail = ward.lower() + ".jpg"
+                args.pause_image = ward.lower() + "_pause.jpg"
         args.thumbnail = os.path.join(tmp_dir, args.thumbnail)
         args.pause_image = os.path.join(tmp_dir, args.pause_image)
         if not os.path.exists(args.thumbnail):
@@ -268,7 +282,7 @@ if __name__ == '__main__':
         if not os.path.exists(args.pause_image):
             if(verbose):
                     print("Pause card doesn't exist, creating")
-            create_cards.create_card(base_image, args.pause_image, card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
+            create_cards.create_card(base_image, args.pause_image, card_pause_title if card_pause_title is not None else card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
     else:
         print("!!If any of Base Image, Card Title, Card Subtitle, or Card Pause Subtitle are defined, ALL must be defined!!")
         sys.exit("A card create element was defined, but not all elements were defined")

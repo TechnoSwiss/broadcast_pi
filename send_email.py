@@ -235,8 +235,10 @@ if __name__ == '__main__':
     email_send = True
     recurring = True # is this a recurring broadcast, then create a new broadcast for next week
     base_image = None
+    card_output = None
     card_title = None
     card_subtitle = None
+    card_pause_title = None
     card_pause_subtitle = None
     viewer_db_host = None
     viewer_db_user = None
@@ -261,10 +263,14 @@ if __name__ == '__main__':
                 args.title = config['broadcast_title'] # this value gets passed to the deletion routine
             if 'title_card_base_image' in config:
                 base_image = config['title_card_base_image']
+            if 'title_card_filename' in config:
+                card_output = config['title_card_filename']
             if 'title_card_title' in config:
                 card_title = config['title_card_title']
             if 'title_card_subtitle' in config:
                 card_subtitle = config['title_card_subtitle']
+            if 'title_card_pause_title' in config:
+                card_pause_title = config['title_card_pause_title']
             if 'title_card_pause_subtitle' in config:
                 card_pause_subtitle = config['title_card_pause_subtitle']
             if 'broadcast_title_card' in config:
@@ -341,8 +347,16 @@ if __name__ == '__main__':
         os.makedirs(tmp_dir, exist_ok=True)
 
     if all(v is not None for v in [base_image, card_title, card_subtitle, card_pause_subtitle]):
-        args.thumbnail = ward.lower() + ".jpg"
-        args.pause_image = ward.lower() + "_pause.jpg"
+        if(card_output is not None):
+            args.thumbnail = card_output.lower() + ".jpg"
+            args.pause_image = card_output.lower() + "_pause.jpg"
+        else:
+            if(args.url_filename is not None):
+                args.thumbnail = args.url_filename.lower() + ".jpg"
+                args.pause_image = args.url_filename.lower() + "_pause.jpg"
+            else:
+                args.thumbnail = ward.lower() + ".jpg"
+                args.pause_image = ward.lower() + "_pause.jpg"
         args.thumbnail = os.path.join(tmp_dir, args.thumbnail)
         args.pause_image = os.path.join(tmp_dir, args.pause_image)
         if not os.path.exists(args.thumbnail):
@@ -352,7 +366,7 @@ if __name__ == '__main__':
         if not os.path.exists(args.pause_image):
             if(verbose):
                     print("Pause card doesn't exist, creating")
-            create_cards.create_card(base_image, args.pause_image, card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
+            create_cards.create_card(base_image, args.pause_image, card_pause_title if card_pause_title is not None else card_title, card_pause_subtitle, ward, num_from, num_to, verbose)
     else:
         print("!!If any of Base Image, Card Title, Card Subtitle, or Card Pause Subtitle are defined, ALL must be defined!!")
         sys.exit("A card create element was defined, but not all elements were defined")

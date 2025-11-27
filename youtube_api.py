@@ -58,6 +58,7 @@ def create_live_event(youtube, title, description, starttime, duration, thumbnai
             ).execute()
     except:
         if(verbose): print(traceback.format_exc())
+        gf.log_exception(traceback.format_exc(), "failed to insert new broadcast")
         print("Failed to insert new Broadcast")
         if(num_from is not None and num_to is not None):
             sms.send_sms(num_from, num_to, ward + " failed to insert new broadcast!", verbose)
