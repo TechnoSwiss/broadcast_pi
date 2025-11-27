@@ -22,7 +22,7 @@ def get_public_ip():
     except:
         return "unknown"
 
-def get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from = None, num_to = None, verbose=False):
+def get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward = None, num_from = None, num_to = None, verbose=False):
     global _db_error_sent  # allow us to suppress repeated messages in this run
 
     DB_CONFIG = {
@@ -57,7 +57,7 @@ def get_unreported_entries_for_video(youtube_id, ward, viewer_db_host, viewer_db
     Returns all unreported rows for a given YouTube ID + ward.
     Each row is a dict with: id, ip_address, viewer_count, viewer_name.
     """
-    conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)
+    conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward, num_from, num_to, verbose)
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(
@@ -82,7 +82,7 @@ def find_name_for_ip(ip_address, viewer_db_host, viewer_db_user, viewer_db_passw
     if not ip_address or ip_address.strip().lower() in ("unknown", "null", "none"):
         return "Unknown"
 
-    conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)
+    conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward, num_from, num_to, verbose)
     try:
         cur = conn.cursor()
 
@@ -134,7 +134,7 @@ def mark_entries_reported(entry_ids, viewer_db_host, viewer_db_user, viewer_db_p
     """
     if not entry_ids:
         return
-    conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)
+    conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward, num_from, num_to, verbose)
     try:
         cur = conn.cursor()
         # Use IN clause; chunk if needed for very large lists
