@@ -263,6 +263,7 @@ if __name__ == '__main__':
     googleDoc = 'Broadcast Viewers' # I need to parameterize this at some point...
 
     testing = True if os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/testing') else False
+    testing_json = False # breaking out what the testing file and the testing variable in the JSON file does
 
     if(args.config_file is not None):
         if("/" in args.config_file):
@@ -275,7 +276,7 @@ if __name__ == '__main__':
 
             # check for keys in config file
             if 'testing' in config:
-                testing |= config['testing']
+                testing_json |= config['testing']
             if 'broadcast_ward' in config:
                 ward = config['broadcast_ward']
             if 'broadcast_title' in config:
@@ -782,7 +783,7 @@ if __name__ == '__main__':
     # leave the stream endpoint running on youtube in case we need to re-start
     # the broadcast so we can continue using the same endpoint, this means
     # we'll need to manually stop the broadcast on youtube studio
-    if(not gf.killer.kill_now):
+    if(not gf.killer.kill_now and not testing_json):
         print("Stopping YT broadcast...")
         if(yt.get_broadcast_status(youtube, current_id, ward, num_from, num_to, verbose) != "complete"):
             yt.stop_broadcast(youtube, current_id, ward, num_from, num_to, verbose)
@@ -815,7 +816,7 @@ if __name__ == '__main__':
         config = json.load(configFile)
 
         if 'testing' in config:
-            testing |= config['testing']
+            testing_json |= config['testing']
         if 'email_send' in config:
             email_send = config['email_send']
 
@@ -900,7 +901,7 @@ if __name__ == '__main__':
 
     # schedule video deletion task
     # don't setup deletion if forcibly killing process
-    if(not gf.killer.kill_now):
+    if(not gf.killer.kill_now and not testing_json):
         delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends

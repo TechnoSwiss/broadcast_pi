@@ -129,19 +129,32 @@ def find_name_for_ip(ip_address, viewer_db_host, viewer_db_user, viewer_db_passw
     finally:
         conn.close()
 
-def mark_entries_reported(entry_ids, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, value = 1, ward = None, num_from = None, num_to = None, verbose = False):
+def mark_entries_reported(entry_ids, viewer_db_host, viewer_db_user, viewer_db_password,
+                          viewer_db_database, value=1, ward=None, num_from=None,
+                          num_to=None, verbose=False):
     """
-    Mark all given attendance row IDs as reported = 1.
+    Mark all given attendance row IDs as reported = <value>.
     """
     if not entry_ids:
         return
-    conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward, num_from, num_to, verbose)
+
+    conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password,
+                    viewer_db_database, ward, num_from, num_to, verbose)
     try:
         cur = conn.cursor()
-        # Use IN clause; chunk if needed for very large lists
-        placeholders = ",".join(["%s"] * len(entry_ids))
-        cur.execute("UPDATE attendance SET reported = %s WHERE id IN (%s)", (value, entry_ids))
+
+        # Build a placeholder list: %s,%s,%s,...
+        placeholders = ", ".join(["%s"] * len(entry_ids))
+
+        # Use the placeholders in the query
+        query = f"UPDATE attendance SET reported = %s WHERE id IN ({placeholders})"
+
+        # First param is 'value', then each id is its own %s
+        params = [value] + entry_ids
+
+        cur.execute(query, params)
         conn.commit()
+
     finally:
         conn.close()
 
@@ -388,4 +401,4 @@ if __name__ == '__main__':
     else:
         start_time = datetime.strptime(datetime.now().strftime("%m/%d/%Y ") + start_time, "%m/%d/%Y %H:%M:%S")
 
-    print(summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose, True)[0])
+    print(summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose, False)[0])

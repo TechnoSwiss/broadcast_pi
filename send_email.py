@@ -59,7 +59,7 @@ def send_total_views(email_from, email_to, ward, total_views, total_previous_vie
             email_to = ",".join(email_to)
         body = "There were " + str(total_views) + " total view(s) reported by YouTube."
         if total_previous_views is not None:
-            body += " An additional " + str(total_views - total_previous_views) + " view(s) since the live broadcast."
+            body += " An additional " + str(total_views - total_previous_views) + " view(s) since the live broadcast.\n"
 
         if viewer_summary_text:
             body += "\n" + viewer_summary_text + "\n"
