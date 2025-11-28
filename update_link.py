@@ -26,45 +26,50 @@ NUM_RETRIES = 5
 #file is just a single ascii line plain text password
 SSH_RSA_KEY_PASS = 'ssh.pass'
 
-def update_ward_name(html_path, ward, num_from, num_to, verbose):
+def update_ward_and_youtube_id(html_path, ward, youtube_id, num_from, num_to, verbose=False, output_path=None):
+    """
+    Updates const WARD_NAME and const YOUTUBE_ID in an HTML file.
+    If output_path is provided, writes to that file instead of overwriting html_path.
+    """
     try:
         p = Path(html_path)
         text = p.read_text(encoding="utf-8")
 
-        # Replace:
-        # const WARD_NAME = "anything_here"
-        new_text = re.sub(
+        # Update WARD_NAME
+        text = re.sub(
             r'const\s+WARD_NAME\s*=\s*"[^"]*"',
             f'const WARD_NAME = "{ward}"',
             text
         )
 
-        p.write_text(new_text, encoding="utf-8")
-    except:
-        if(verbose): print(traceback.format_exc())
-        print("Failed to update ward in link plage")
-        if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to update ward in link page!", verbose)
-
-def update_youtube_id(html_path, ward, youtube_id, num_from, num_to, verbose):
-    try:
-        p = Path(html_path)
-        text = p.read_text(encoding="utf-8")
-
-        # Replace:
-        # const YOUTUBE_ID = "anything_here"
-        new_text = re.sub(
+        # Update YOUTUBE_ID
+        text = re.sub(
             r'const\s+YOUTUBE_ID\s*=\s*"[^"]*"',
             f'const YOUTUBE_ID = "{youtube_id}"',
             text
         )
 
-        p.write_text(new_text, encoding="utf-8")
-    except:
-        if(verbose): print(traceback.format_exc())
-        print("Failed to update youtube id in link plage")
-        if(num_from is not None and num_to is not None):
-            sms.send_sms(num_from, num_to, ward + " failed to update youtube id in link page!", verbose)
+        # Determine output target
+        target = Path(output_path) if output_path else p
+        target.write_text(text, encoding="utf-8")
+
+        if verbose:
+            print(f"Successfully updated WARD_NAME and YOUTUBE_ID in {target}")
+
+    except Exception:
+        if verbose:
+            print(traceback.format_exc())
+
+        print("Failed to update ward and youtube id in link page")
+
+        # Send SMS warning (if configured)
+        if num_from and num_to:
+            sms.send_sms(
+                num_from,
+                num_to,
+                f"{ward} failed to update ward/youtube id in link page!",
+                verbose
+            )
 
 def get_my_uploads_list(youtube):
     # Retrieve the contentDetails part of the channel resource for the
@@ -121,7 +126,12 @@ def update_live_broadcast_link(live_broadcast_id, args, ward, num_from, num_to, 
     else:
         link_file_path = 'public_html/broadcast/' + (filename if (filename is not None) else ward.lower()) + (('_' + args.url_key) if (args.url_key is not None) else '')  + '.html'
 
-    local_link_file = 'link.html'
+    script_dir = os.path.abspath(os.path.dirname(__file__))
+    tmp_dir = os.path.join(script_dir, "tmp")
+    if not os.path.isdir(tmp_dir):
+        os.makedirs(tmp_dir, exist_ok=True)
+
+    local_link_file = os.path.join(tmp_dir, 'link.html')
     if(link_page is None):
         link_file = open(local_link_file, 'w')
         link_file.write('<head>\n')
@@ -138,9 +148,7 @@ def update_live_broadcast_link(live_broadcast_id, args, ward, num_from, num_to, 
         link_file.write('</body>\n')
         link_file.close()
     else:
-        local_link_file = link_page
-        update_ward_name(link_page, ward, num_from, num_to, verbose)
-        update_youtube_id(link_page, ward, live_broadcast_id, num_from, num_to, verbose)
+        update_ward_and_youtube_id(link_page, ward, live_broadcast_id, num_from, num_to, verbose, local_link_file)
 
     if os.path.exists(SSH_RSA_KEY_PASS) and os.path.exists(args.home_dir + '/.ssh/id_rsa'):
         for retry_num in range(NUM_RETRIES):

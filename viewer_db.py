@@ -25,6 +25,10 @@ def get_public_ip():
 def get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward = None, num_from = None, num_to = None, verbose=False):
     global _db_error_sent  # allow us to suppress repeated messages in this run
 
+    if not all([viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database]):
+        print("Missing DB configuration values!")
+        sys.exit(1)
+
     DB_CONFIG = {
         "host": viewer_db_host,
         "user": viewer_db_user,
@@ -45,7 +49,7 @@ def get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_datab
 
             print(f"DB connection error, IP: {ip_address} may be missing from access list. Error: {str(err)}")
             if(num_from is not None and num_to is not None):
-                sms.send_sms(num_from, num_to, ward + f" DB connection error, IP: {ip_address} may be missing from access list!", verbose)
+                sms.send_sms(num_from, num_to, f"{ward or 'Unknown Ward'} DB connection error, IP: {ip_address} may be missing from access list!", verbose)
 
         # Re-raise a generic error so callers know it failed
         raise RuntimeError("Database connection failed") from err
@@ -73,7 +77,7 @@ def get_unreported_entries_for_video(youtube_id, ward, viewer_db_host, viewer_db
     finally:
         conn.close()
 
-def find_name_for_ip(ip_address, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from = None, num_to = None, verbose = False):
+def find_name_for_ip(ip_address, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward = None, num_from = None, num_to = None, verbose = False):
     """
     Resolve a name for an IP address.
     If IP is None/empty/unknown, return 'Unknown' without creating an alias.
@@ -113,14 +117,11 @@ def find_name_for_ip(ip_address, viewer_db_host, viewer_db_user, viewer_db_passw
             return row[0]
 
         # 3) Create new alias Visitor N for legitimate IPs
-        cur.execute("SELECT COUNT(*) FROM aliases")
-        count = cur.fetchone()[0] or 0
-        alias_name = f"Visitor {count + 1}"
+        cur.execute("INSERT INTO aliases (ip_address) VALUES (%s)", (ip_address,))
+        new_id = cur.lastrowid
+        alias_name = f"Visitor {new_id}"
 
-        cur.execute(
-            "INSERT INTO aliases (ip_address, alias_name) VALUES (%s, %s)",
-            (ip_address, alias_name),
-        )
+        cur.execute("UPDATE aliases SET alias_name=%s WHERE id=%s", (alias_name, new_id))
         conn.commit()
 
         return alias_name
@@ -139,8 +140,7 @@ def mark_entries_reported(entry_ids, viewer_db_host, viewer_db_user, viewer_db_p
         cur = conn.cursor()
         # Use IN clause; chunk if needed for very large lists
         placeholders = ",".join(["%s"] * len(entry_ids))
-        query = f"UPDATE attendance SET reported = {value} WHERE id IN ({placeholders})"
-        cur.execute(query, entry_ids)
+        cur.execute("UPDATE attendance SET reported = %s WHERE id IN (%s)", (value, entry_ids))
         conn.commit()
     finally:
         conn.close()
@@ -149,7 +149,7 @@ def mark_entries_reported(entry_ids, viewer_db_host, viewer_db_user, viewer_db_p
 
 from collections import defaultdict
 
-def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, broadcast_start_time, num_from = None, num_to = None, verbose = False):
+def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, broadcast_start_time, num_from = None, num_to = None, verbose = False, view_only = False):
     """
     Returns (summary_text, name_counts_dict, total_entries_used).
 
@@ -161,11 +161,21 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
     - Resolve a name for that IP (row name > prior DB name > aliases).
     - Aggregate counts per name (Taylor: 3, Bowden: 1, etc.).
     - Mark *all* rows we used as reported.
+
+    If view_only=True:
+        - No DB rows are marked reported.
+        - Early rows are listed in the output.
     """
     global _db_error_sent
     _db_error_sent = False
 
-    rows = get_unreported_entries_for_video(youtube_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)
+    rows = get_unreported_entries_for_video(
+        youtube_id, ward,
+        viewer_db_host, viewer_db_user,
+        viewer_db_password, viewer_db_database,
+        num_from, num_to, verbose
+    )
+
     if not rows:
         return "", {}, 0
 
@@ -174,60 +184,69 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
     early_rows = []
     valid_rows = []
 
+    # --- Separate early vs valid ---
     for r in rows:
         row_time = r["timestamp"]
-        if row_time is None:
+        if row_time is None or row_time < cutoff_time:
             early_rows.append(r)
         else:
-            if row_time < cutoff_time:
-                early_rows.append(r)
-            else:
-                valid_rows.append(r)
+            valid_rows.append(r)
 
-    # Mark early rows as reported but do not include them in summary
-    if early_rows:
-        mark_entries_reported([r["id"] for r in early_rows], viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, 2, ward, num_from, num_to, verbose)
+    # --- Mark early rows as reported=2 unless view_only ---
+    if early_rows and not view_only:
+        mark_entries_reported(
+            [r["id"] for r in early_rows],
+            viewer_db_host, viewer_db_user,
+            viewer_db_password, viewer_db_database,
+            value=2,
+            ward=ward,
+            num_from=num_from, num_to=num_to,
+            verbose=verbose
+        )
 
-    # If nothing valid remains, return early
+    # If only early rows existed
     if not valid_rows:
+        if view_only:
+            # Include an early-row listing
+            lines = ["Early submissions (excluded):"]
+            for r in early_rows:
+                ip = r["ip_address"] or "Unknown"
+                vc = r["viewer_count"]
+                lines.append(f"{ip.ljust(15)} {str(vc).rjust(3)} viewer(s)")
+            return "\n".join(lines), {}, len(early_rows)
+
         return f"No valid submissions ({len(early_rows)} early submissions excluded).", {}, len(early_rows)
 
-    # Continue using valid_rows as your main dataset
+    # --- Continue processing valid rows ---
     rows = valid_rows
 
-    # NEW: separate lists for handling
     normal_ips = defaultdict(list)
     unknown_ip_rows = []
 
-    # Split rows into valid IP and unknown IP
     for r in rows:
-        ip = r["ip_address"]
+        ip = (r["ip_address"] or "").strip().lower()
         name = (r.get("viewer_name") or "").strip()
 
-        if not ip or ip.strip().lower() in ("unknown", "null", "none", ""):
-            # UNKNOWN IP CASE
-            if name:
-                # Named entries get grouped by name
-                unknown_ip_rows.append(r)
-            else:
-                # Anonymous unknown IP entries remain separate viewers
-                unknown_ip_rows.append(r)
+        if ip in ("", "unknown", "null", "none"):
+            unknown_ip_rows.append(r)
         else:
-            # NORMAL IP CASE
             normal_ips[ip].append(r)
 
     chosen_rows = []
     all_ids = []
 
-    # Process normal IPs: one row per IP, pick highest viewer_count
+    # --- Process valid-IP rows ---
     for ip, entries in normal_ips.items():
         for e in entries:
             all_ids.append(e["id"])
 
         best = max(entries, key=lambda e: e["viewer_count"])
-        viewer_name = best.get("viewer_name")
-        if not viewer_name:
-            viewer_name = find_name_for_ip(ip, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from, num_to, verbose)
+        viewer_name = best.get("viewer_name") or find_name_for_ip(
+            best["ip_address"],
+            viewer_db_host, viewer_db_user,
+            viewer_db_password, viewer_db_database,
+            num_from, num_to, verbose
+        )
 
         chosen_rows.append({
             "name": viewer_name,
@@ -235,64 +254,75 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
             "ip_address": ip,
         })
 
-    # Process unknown IP rows
-    # RULE:
-    #   If viewer_name is present → combine by name
-    #   If viewer_name missing → each row is its own viewer named "Unknown"
+    # --- Handle unknown IP rows ---
     grouped_unknown_by_name = defaultdict(list)
 
     for r in unknown_ip_rows:
         all_ids.append(r["id"])
-
         name = (r.get("viewer_name") or "").strip()
+
         if name:
-            # group named unknown-IPs by name
             grouped_unknown_by_name[name].append(r)
         else:
-            # each completely anonymous row is separate
             chosen_rows.append({
                 "name": "Unknown",
                 "viewer_count": r["viewer_count"],
                 "ip_address": None,
             })
 
-    # Combine named unknown-IP entries
     for name, entries in grouped_unknown_by_name.items():
         best = max(entries, key=lambda e: e["viewer_count"])
         chosen_rows.append({
             "name": name,
             "viewer_count": best["viewer_count"],
-            "ip_address": None,
+            "ip_address": None
         })
 
-    # AGGREGATE totals by name
+    # --- Aggregate by name ---
     name_counts = defaultdict(int)
     for row in chosen_rows:
         name_counts[row["name"]] += row["viewer_count"]
 
-    # Format aligned breakdown text (same pretty formatting as before)
+    # Build pretty-print report
     names = list(name_counts.keys())
     max_name_len = max(len(n) for n in names)
     num_width = max(len(str(v)) for v in name_counts.values())
 
-    lines = ["Household breakdown:"]
+    lines = []
+
+    # If in view_only mode, also print early rows
+    if view_only and early_rows:
+        lines.append("Early submissions (excluded):")
+        for r in early_rows:
+            ip = r["ip_address"] or "Unknown"
+            vc = r["viewer_count"]
+            lines.append(f"{ip.ljust(max_name_len)}   {str(vc).rjust(num_width)}   viewer(s)")
+        lines.append("")  # blank line before main section
+
+    lines.append("Household breakdown:")
     for name in sorted(names):
         count = name_counts[name]
         lines.append(
             f"{name.ljust(max_name_len)}   {str(count).rjust(num_width)}   viewer(s)"
         )
 
-    # Compute absolute-value total
     total_abs = sum(abs(v) for v in name_counts.values())
-
-    # Add a blank line + total line
     lines.append("")
     lines.append(f"Total: {total_abs}   viewer(s)")
 
     summary_text = "\n".join(lines)
 
-    # Mark all rows as reported
-    mark_entries_reported(all_ids, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, 1, ward, num_from, num_to, verbose)
+    # Mark rows as reported unless view_only
+    if not view_only:
+        mark_entries_reported(
+            all_ids,
+            viewer_db_host, viewer_db_user,
+            viewer_db_password, viewer_db_database,
+            value=1,
+            ward=ward,
+            num_from=num_from, num_to=num_to,
+            verbose=verbose
+        )
 
     return summary_text, dict(name_counts), len(all_ids)
 
@@ -358,4 +388,4 @@ if __name__ == '__main__':
     else:
         start_time = datetime.strptime(datetime.now().strftime("%m/%d/%Y ") + start_time, "%m/%d/%Y %H:%M:%S")
 
-    print(summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose)[0])
+    print(summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose, True)[0])

@@ -52,11 +52,13 @@
     </div>
   </div>
 
+  <div id="fileInfo" class="mt-4 text-center text-gray-600 text-sm"></div>
+
 <script>
 const WARD_NAME = "ward_name"
 const SUBMIT_URL = "https://hillsborostake.org/broadcast/log_viewer.php";
 const YOUTUBE_ID = "youtube_id"
-const REDIRECT_SECONDS = 20;
+const REDIRECT_SECONDS = 15;
 let remaining = REDIRECT_SECONDS;
 const redirectEl = document.getElementById("redirectMsg");
 redirectEl.textContent = `Redirigiendo en ${remaining} segundos...`;
@@ -128,12 +130,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function saveCookies(viewerCount, viewerName) {
   if (viewerName && viewerName.trim() !== "") {
-    setCookie("viewerCount", viewerCount, 365);
-  }
-  if (viewerCount !== "-1") {
     setCookie("viewerName", viewerName, 365);
   }
+  if (viewerCount !== "-1") {
+    setCookie("viewerCount", viewerCount, 365);
+  }
 }
+
+// Display last-modified time in Pacific Time with YouTube ID
+function displayFileInfo() {
+  const fileInfoEl = document.getElementById("fileInfo");
+
+  // Last-modified time from HTTP header
+  const lastModRaw = document.lastModified;
+
+  if (!lastModRaw) {
+    fileInfoEl.textContent = `YouTube ID: ${YOUTUBE_ID}`;
+    return;
+  }
+
+  // Convert to Date
+  const utcDate = new Date(lastModRaw);
+
+  // Convert to Pacific Time explicitly
+  const pacificDateStr = utcDate.toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  });
+
+  fileInfoEl.textContent = `${pacificDateStr} — ${YOUTUBE_ID}`;
+}
+
+document.addEventListener("DOMContentLoaded", displayFileInfo);
 
 // Cookie helpers
 function setCookie(name, value, days) {
