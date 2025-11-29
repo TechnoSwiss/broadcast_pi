@@ -475,7 +475,7 @@ def next_available_row(sheet, column, cols_to_sample=1):
 
 def check_column(sheet, videoID, column):
     try:
-        column = sheet.find(videoID)
+        column = (sheet.find(videoID)).col
     except gspread.exceptions.CellNotFound:
         column = column
     return column

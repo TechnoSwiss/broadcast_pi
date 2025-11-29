@@ -104,7 +104,7 @@ def write_output(credentials_file, outFile, youtube, videoID, ward, num_from = N
                     # we had just been using column here, which is returned by yt.get_sheet_row_and_column, however for stake conference where we're running two instances
                     # they both end up writing to column 1 if we're not careful about how they're started, so better to just use sheet.find(videoID) to grab the correct column
                     # assuming this doesn't add a bunch of extra time/processing power
-                    #column = check_column(sheet, videoID, column)
+                    column = yt.check_column(sheet, videoID, column)
                     sheet.update_cell(insert_row, column, numViewers)
                     insert_row = insert_row + 1
                     break
