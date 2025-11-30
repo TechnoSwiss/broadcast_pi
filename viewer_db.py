@@ -322,6 +322,9 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
     total_abs = sum(abs(v) for v in name_counts.values())
     lines.append("")
     lines.append(f"Total: {total_abs}   viewer(s)")
+    average_abs = total_abs / len(names)
+    rounded = round(average_abs * 2) / 2
+    lines.append(f"Ave. per Household: {rounded:.1f}   viewer(s)")
 
     summary_text = "\n".join(lines)
 
@@ -401,4 +404,4 @@ if __name__ == '__main__':
     else:
         start_time = datetime.strptime(datetime.now().strftime("%m/%d/%Y ") + start_time, "%m/%d/%Y %H:%M:%S")
 
-    print(summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose, False)[0])
+    print(summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose, True)[0])
