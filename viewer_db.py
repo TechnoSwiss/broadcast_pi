@@ -56,7 +56,7 @@ def get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_datab
 
 # ---------- Core helpers ----------
 
-def get_unreported_entries_for_video(youtube_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from = None, num_to = None, verbose = False):
+def get_unreported_entries_for_video(youtube_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, num_from = None, num_to = None, verbose = False, test = False):
     """
     Returns all unreported rows for a given YouTube ID + ward.
     Each row is a dict with: id, ip_address, viewer_count, viewer_name.
@@ -64,11 +64,12 @@ def get_unreported_entries_for_video(youtube_id, ward, viewer_db_host, viewer_db
     conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward, num_from, num_to, verbose)
     try:
         cur = conn.cursor(dictionary=True)
+        condition = "AND reported = 0" if not test else ""
         cur.execute(
-            """
-            SELECT id, ip_address, viewer_count, viewer_name, timestamp
+            f"""
+            SELECT id, device_id, ip_address, viewer_count, viewer_name, timestamp
             FROM attendance
-            WHERE youtube_id = %s AND ward = %s AND reported = 0
+            WHERE youtube_id = %s AND ward = %s {condition}
             """,
             (youtube_id, ward),
         )
@@ -77,53 +78,95 @@ def get_unreported_entries_for_video(youtube_id, ward, viewer_db_host, viewer_db
     finally:
         conn.close()
 
-def find_name_for_ip(ip_address, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward = None, num_from = None, num_to = None, verbose = False):
+def normalize_name(name):
+    return (name or "").strip()
+
+def is_multi_word_name(name):
+    # split on whitespace, ignore empty chunks
+    return len([p for p in name.split() if p]) >= 2
+
+def strip_suffix(name):
+    return name.split("#", 1)[0]
+
+def resolve_name(device_id, ip_address, viewer_db_host, viewer_db_user, viewer_db_password,
+                 viewer_db_database, ward=None, num_from=None, num_to=None, verbose=False):
     """
-    Resolve a name for an IP address.
-    If IP is None/empty/unknown, return 'Unknown' without creating an alias.
+    Resolve a name using:
+      1) attendance by device_id (if present)
+      2) attendance by ip_address (if present)
+      3) aliases by device_id
+      4) aliases by ip_address
+      5) create alias (store device_id and/or ip_address)
     """
-    # --- NEW CHECK ---
-    if not ip_address or ip_address.strip().lower() in ("unknown", "null", "none"):
+    def is_bad(s):
+        return (not s) or (str(s).strip().lower() in ("unknown", "null", "none", ""))
+
+    # If neither identifier is usable, don't create alias
+    if is_bad(device_id) and is_bad(ip_address):
         return "Unknown"
 
     conn = get_conn(viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, ward, num_from, num_to, verbose)
     try:
         cur = conn.cursor()
 
-        # 1) Look in attendance table for any known name for this IP
-        cur.execute(
-            """
-            SELECT viewer_name
-            FROM attendance
-            WHERE ip_address = %s
-              AND viewer_name IS NOT NULL
-              AND viewer_name <> ''
-            ORDER BY timestamp ASC
-            LIMIT 1
-            """,
-            (ip_address,),
-        )
-        row = cur.fetchone()
-        if row and row[0]:
-            return row[0]
+        # 1) attendance by device_id
+        if not is_bad(device_id):
+            cur.execute(
+                """
+                SELECT viewer_name
+                FROM attendance
+                WHERE device_id = %s
+                  AND viewer_name IS NOT NULL
+                  AND viewer_name <> ''
+                ORDER BY timestamp ASC
+                LIMIT 1
+                """,
+                (device_id,),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                return row[0]
 
-        # 2) Look in aliases table
-        cur.execute(
-            "SELECT alias_name FROM aliases WHERE ip_address = %s",
-            (ip_address,),
-        )
-        row = cur.fetchone()
-        if row and row[0]:
-            return row[0]
+        # 2) attendance by ip_address
+        if not is_bad(ip_address):
+            cur.execute(
+                """
+                SELECT viewer_name
+                FROM attendance
+                WHERE ip_address = %s
+                  AND viewer_name IS NOT NULL
+                  AND viewer_name <> ''
+                ORDER BY timestamp ASC
+                LIMIT 1
+                """,
+                (ip_address,),
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                return row[0]
 
-        # 3) Create new alias Visitor N for legitimate IPs
-        cur.execute("INSERT INTO aliases (ip_address) VALUES (%s)", (ip_address,))
+        # 3) aliases by device_id
+        if not is_bad(device_id):
+            cur.execute("SELECT alias_name FROM aliases WHERE device_id = %s LIMIT 1", (device_id,))
+            row = cur.fetchone()
+            if row and row[0]:
+                return row[0]
+
+        # 4) aliases by ip_address
+        if not is_bad(ip_address):
+            cur.execute("SELECT alias_name FROM aliases WHERE ip_address = %s LIMIT 1", (ip_address,))
+            row = cur.fetchone()
+            if row and row[0]:
+                return row[0]
+
+        # 5) Create new alias
+        # Store whichever identifiers we have.
+        cur.execute("INSERT INTO aliases (device_id, ip_address) VALUES (%s, %s)", (None if is_bad(device_id) else device_id,
+                                                                                   None if is_bad(ip_address) else ip_address))
         new_id = cur.lastrowid
         alias_name = f"Visitor {new_id}"
-
         cur.execute("UPDATE aliases SET alias_name=%s WHERE id=%s", (alias_name, new_id))
         conn.commit()
-
         return alias_name
 
     finally:
@@ -162,7 +205,7 @@ def mark_entries_reported(entry_ids, viewer_db_host, viewer_db_user, viewer_db_p
 
 from collections import defaultdict
 
-def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, broadcast_start_time, num_from = None, num_to = None, verbose = False, view_only = False):
+def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, broadcast_start_time, num_from = None, num_to = None, verbose = False, view_only = False, test = False):
     """
     Returns (summary_text, name_counts_dict, total_entries_used).
 
@@ -186,7 +229,7 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
         youtube_id, ward,
         viewer_db_host, viewer_db_user,
         viewer_db_password, viewer_db_database,
-        num_from, num_to, verbose
+        num_from, num_to, verbose, test
     )
 
     if not rows:
@@ -206,7 +249,7 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
             valid_rows.append(r)
 
     # --- Mark early rows as reported=2 unless view_only ---
-    if early_rows and not view_only:
+    if early_rows and (not view_only and not test):
         mark_entries_reported(
             [r["id"] for r in early_rows],
             viewer_db_host, viewer_db_user,
@@ -219,7 +262,7 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
 
     # If only early rows existed
     if not valid_rows:
-        if view_only:
+        if (view_only or test):
             # Include an early-row listing
             lines = ["Early submissions (excluded):"]
             for r in early_rows:
@@ -233,103 +276,144 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
     # --- Continue processing valid rows ---
     rows = valid_rows
 
-    normal_ips = defaultdict(list)
-    unknown_ip_rows = []
+    def norm(s):
+        return (s or "").strip()
 
-    for r in rows:
-        ip = (r["ip_address"] or "").strip().lower()
-        name = (r.get("viewer_name") or "").strip()
+    def is_bad(s):
+        return (not s) or (str(s).strip().lower() in ("unknown", "null", "none", ""))
 
-        if ip in ("", "unknown", "null", "none"):
-            unknown_ip_rows.append(r)
-        else:
-            normal_ips[ip].append(r)
+    def dedupe_preserve_order_case_insensitive(names):
+        seen = set()
+        out = []
+        for n in names:
+            key = n.strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                out.append(n.strip())
+        return out
 
-    chosen_rows = []
+    # 1) Group rows by identity (device_id preferred, else ip, else per-row)
+    groups_by_ident = defaultdict(list)
     all_ids = []
 
-    # --- Process valid-IP rows ---
-    for ip, entries in normal_ips.items():
-        for e in entries:
-            all_ids.append(e["id"])
-
-        best = max(entries, key=lambda e: e["viewer_count"])
-        viewer_name = best.get("viewer_name") or find_name_for_ip(
-            best["ip_address"],
-            viewer_db_host, viewer_db_user,
-            viewer_db_password, viewer_db_database,
-            num_from, num_to, verbose
-        )
-
-        chosen_rows.append({
-            "name": viewer_name,
-            "viewer_count": best["viewer_count"],
-            "ip_address": ip,
-        })
-
-    # --- Handle unknown IP rows ---
-    grouped_unknown_by_name = defaultdict(list)
-
-    for r in unknown_ip_rows:
+    for r in rows:
         all_ids.append(r["id"])
-        name = (r.get("viewer_name") or "").strip()
 
-        if name:
-            grouped_unknown_by_name[name].append(r)
+        device_id = r.get("device_id")
+        ip = r.get("ip_address")
+
+        if not is_bad(device_id):
+            ident_key = ("device", device_id)
+        elif not is_bad(ip):
+            ident_key = ("ip", ip)
         else:
-            chosen_rows.append({
-                "name": "Unknown",
-                "viewer_count": r["viewer_count"],
-                "ip_address": None,
-            })
+            ident_key = ("unknown", r["id"])
 
-    for name, entries in grouped_unknown_by_name.items():
-        best = max(entries, key=lambda e: e["viewer_count"])
-        chosen_rows.append({
-            "name": name,
-            "viewer_count": best["viewer_count"],
-            "ip_address": None
-        })
+        groups_by_ident[ident_key].append(r)
 
-    # --- Aggregate by name ---
-    name_counts = defaultdict(int)
-    for row in chosen_rows:
-        name_counts[row["name"]] += row["viewer_count"]
+    # 2) For each identity group:
+    #    - viewer_count = max(viewer_count)
+    #    - name display = all distinct provided names joined by " / "
+    #      OR resolved via resolve_name() if none provided
+    ident_results = []  # list of (ident_key, display_name, max_count)
 
-    # Build pretty-print report
-    names = list(name_counts.keys())
-    max_name_len = max(len(n) for n in names)
-    num_width = max(len(str(v)) for v in name_counts.values())
+    for ident_key, entries in groups_by_ident.items():
+        counts = [e["viewer_count"] for e in entries]
+        max_count = max(counts)
+
+        provided = [norm(e.get("viewer_name")) for e in entries if norm(e.get("viewer_name"))]
+        uniq_names = dedupe_preserve_order_case_insensitive(provided)
+
+        if uniq_names:
+            display_name = " / ".join(uniq_names)
+        else:
+            any_device = next((e.get("device_id") for e in entries if not is_bad(e.get("device_id"))), None)
+            any_ip = next((e.get("ip_address") for e in entries if not is_bad(e.get("ip_address"))), None)
+
+            display_name = resolve_name(
+                any_device, any_ip,
+                viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database,
+                ward=ward, num_from=num_from, num_to=num_to, verbose=verbose
+            )
+
+        ident_results.append((ident_key, display_name, max_count))
+
+    # 3) Optional merge ACROSS identities:
+    #    - Only if display_name is a SINGLE multi-word name (no " / ")
+    #    - Never merge single-word names across identities
+    #    - Never merge multi-name labels like "Tom / Tom Smith" across identities
+    name_counts = defaultdict(float)
+
+    for ident_key, display_name, count in ident_results:
+        base_name = normalize_name(display_name)
+
+        if (" / " not in base_name) and is_multi_word_name(base_name):
+            # Safe to combine across identities
+            out_key = base_name
+        else:
+            # Keep scoped per identity
+            out_key = f"{base_name}#{ident_key[0]}:{ident_key[1]}"
+
+        name_counts[out_key] += count
+
+    # 4) Formatting helpers
+    def strip_suffix(name):
+        # Here suffix includes #device:XYZ or #ip:1.2.3.4
+        return name.split("#", 1)[0]
+
+    def fmt_num(x):
+        if abs(x - round(x)) < 1e-9:
+            return str(int(round(x)))
+        return f"{x:.1f}"
+
+    items = list(name_counts.items())
+
+    # Disambiguate duplicate display names (after stripping suffix)
+    base_counts = defaultdict(int)
+    for k, _ in items:
+        base_counts[strip_suffix(k)] += 1
+
+    base_seen = defaultdict(int)
+    display_rows = []
+    for k, v in sorted(items, key=lambda kv: strip_suffix(kv[0]).lower()):
+        base = strip_suffix(k)
+        if base_counts[base] > 1:
+            base_seen[base] += 1
+            display = f"{base} ({base_seen[base]})"
+        else:
+            display = base
+        display_rows.append((display, v))
+
+    max_name_len = max(len(d) for d, _ in display_rows) if display_rows else 10
+    num_width = max(len(fmt_num(v)) for _, v in display_rows) if display_rows else 1
 
     lines = []
 
-    # If in view_only mode, also print early rows
-    if view_only and early_rows:
+    # Early rows list (view_only/test)
+    if (view_only or test) and early_rows:
         lines.append("Early submissions (excluded):")
         for r in early_rows:
-            ip = r["ip_address"] or "Unknown"
+            ip_disp = r["ip_address"] or "Unknown"
             vc = r["viewer_count"]
-            lines.append(f"{ip.ljust(max_name_len)}   {str(vc).rjust(num_width)}   viewer(s)")
-        lines.append("")  # blank line before main section
+            lines.append(f"{ip_disp.ljust(max_name_len)}   {str(vc).rjust(num_width)}   viewer(s)   [EARLY]")
+        lines.append("")
 
     lines.append("Household breakdown:")
-    for name in sorted(names):
-        count = name_counts[name]
-        lines.append(
-            f"{name.ljust(max_name_len)}   {str(count).rjust(num_width)}   viewer(s)"
-        )
+    for display, val in display_rows:
+        lines.append(f"{display.ljust(max_name_len)}   {fmt_num(val).rjust(num_width)}   viewer(s)")
 
     total_abs = sum(abs(v) for v in name_counts.values())
     lines.append("")
-    lines.append(f"Total: {total_abs}   viewer(s)")
-    average_abs = total_abs / len(names)
+    lines.append(f"Total: {fmt_num(total_abs)}   viewer(s)")
+
+    average_abs = total_abs / float(len(display_rows)) if display_rows else 0.0
     rounded = round(average_abs * 2) / 2
     lines.append(f"Ave. per Household: {rounded:.1f}   viewer(s)")
 
     summary_text = "\n".join(lines)
 
-    # Mark rows as reported unless view_only
-    if not view_only:
+    # Mark rows as reported unless view_only/test
+    if (not view_only and not test):
         mark_entries_reported(
             all_ids,
             viewer_db_host, viewer_db_user,
@@ -340,16 +424,17 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
             verbose=verbose
         )
 
-    return summary_text, dict(name_counts), len(all_ids)
+    return summary_text, {k: float(v) for k, v in name_counts.items()}, len(all_ids)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Viewer Database Connector File')
     parser.add_argument('-c','--config-file',type=str,help='JSON Configuration file')
     parser.add_argument('-w','--ward',type=str,help='Name of Ward being broadcast')
     parser.add_argument('-C','--current-id',type=str,help='ID value for the current broadcast, used if deleting current broadcast is true')
-    parser.add_argument('-s','--start-time',type=str,help='Broadcast start time in HH:MM:SS')
+    parser.add_argument('-s','--start-time',type=str,help='Broadcast start time in HH:MM:SS or YYYY-MM-DD HH:MM:SS')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
+    parser.add_argument('--test',default=False, action='store_true',help='Test run for debugging')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     args = parser.parse_args()
 
@@ -379,7 +464,8 @@ if __name__ == '__main__':
             config = json.load(configFile)
 
             if 'broadcast_ward' in config:
-                ward = config['broadcast_ward']
+                if(not ward):
+                    ward = config['broadcast_ward']
             if start_time is None and 'broadcast_time' in config:
                 start_time = config['broadcast_time']
             if 'viewer_db_host' in config:
@@ -399,9 +485,17 @@ if __name__ == '__main__':
         print("!!Ward is required argument!!")
         sys.exit("Ward is required argument")
 
-    if(start_time is None):
+    if start_time is None:
         start_time = datetime.now()
     else:
-        start_time = datetime.strptime(datetime.now().strftime("%m/%d/%Y ") + start_time, "%m/%d/%Y %H:%M:%S")
+        start_time = start_time.strip()
 
-    print(summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose, True)[0])
+        if "-" in start_time:
+            # Full datetime: YYYY-MM-DD HH:MM:SS
+            start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+        else:
+            # Time only: HH:MM:SS → use today's date
+            today = datetime.now().strftime("%Y-%m-%d ")
+            start_time = datetime.strptime(today + start_time, "%Y-%m-%d %H:%M:%S")
+
+    print(summarize_viewers_for_broadcast(current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, start_time, num_from, num_to, verbose, True, args.test)[0])

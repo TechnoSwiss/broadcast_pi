@@ -55,6 +55,7 @@
   <div id="fileInfo" class="mt-4 text-center text-gray-600 text-sm"></div>
 
 <script>
+const deviceId = getDeviceId();
 const WARD_NAME = "ward_name"
 const SUBMIT_URL = "https://hillsborostake.org/broadcast/log_viewer.php";
 const YOUTUBE_ID = "youtube_id"
@@ -78,7 +79,7 @@ document.getElementById("viewerForm").addEventListener("submit", async function 
   const viewerCount = document.getElementById("viewerCount").value;
   const viewerName = document.getElementById("viewerName").value;
   const ip = await getIP().catch(() => "unknown");
-  const payload = { viewerCount, viewerName, ip, ward: WARD_NAME, youtubeID: YOUTUBE_ID };
+  const payload = { viewerCount, viewerName, ip, device_id: deviceId, ward: WARD_NAME, youtubeID: YOUTUBE_ID };
 
   //console.log("Submit =", WARD_NAME)
   //console.log("YouTubeID =", YOUTUBE_ID)
@@ -167,6 +168,15 @@ function displayFileInfo() {
 }
 
 document.addEventListener("DOMContentLoaded", displayFileInfo);
+
+function getDeviceId() {
+  let id = getCookie("device_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    setCookie("device_id", id, 365 * 5); // 5 years
+  }
+  return id;
+}
 
 // Cookie helpers
 function setCookie(name, value, days) {
