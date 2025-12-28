@@ -354,7 +354,18 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
             # Keep scoped per identity
             out_key = f"{base_name}#{ident_key[0]}:{ident_key[1]}"
 
-        name_counts[out_key] += count
+        prev = name_counts.get(out_key)
+
+        if prev is None:
+            # First value wins, even if it's -1
+            name_counts[out_key] = count
+        else:
+            # If either value is positive, take the larger
+            if count >= 0 or prev >= 0:
+                name_counts[out_key] = max(prev, count)
+            else:
+                # both are negative (-1), keep -1
+                name_counts[out_key] = -1
 
     # 4) Formatting helpers
     def strip_suffix(name):
@@ -490,9 +501,11 @@ if __name__ == '__main__':
     else:
         start_time = start_time.strip()
 
-        if "-" in start_time:
-            # Full datetime: YYYY-MM-DD HH:MM:SS
-            start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+        if "/" in start_time or "-" in start_time:
+            try:
+                start_time = datetime.strptime(start_time, "%m/%d/%Y %H:%M:%S")
+            except:
+                start_time = datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
         else:
             # Time only: HH:MM:SS → use today's date
             today = datetime.now().strftime("%Y-%m-%d ")
