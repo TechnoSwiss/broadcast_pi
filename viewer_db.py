@@ -159,10 +159,22 @@ def resolve_name(device_id, ip_address, viewer_db_host, viewer_db_user, viewer_d
             if row and row[0]:
                 return row[0]
 
-        # 5) Create new alias
-        # Store whichever identifiers we have.
-        cur.execute("INSERT INTO aliases (device_id, ip_address) VALUES (%s, %s)", (None if is_bad(device_id) else device_id,
-                                                                                   None if is_bad(ip_address) else ip_address))
+        # 5) Create new alias ONLY if we have at least one usable identifier
+
+        usable_device = not is_bad(device_id)
+        usable_ip = not is_bad(ip_address)
+
+        if not (usable_device or usable_ip):
+            # No stable identity possible
+            return "Unknown"
+
+        cur.execute(
+            "INSERT INTO aliases (device_id, ip_address) VALUES (%s, %s)",
+            (
+                device_id if usable_device else None,
+                ip_address if usable_ip else None,
+            )
+        )
         new_id = cur.lastrowid
         alias_name = f"Visitor {new_id}"
         cur.execute("UPDATE aliases SET alias_name=%s WHERE id=%s", (alias_name, new_id))
@@ -235,7 +247,7 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
     if not rows:
         return "", {}, 0
 
-    cutoff_time = broadcast_start_time - timedelta(minutes=30)
+    cutoff_time = broadcast_start_time - timedelta(minutes=90)
 
     early_rows = []
     valid_rows = []
