@@ -203,7 +203,7 @@ if __name__ == "__main__":
     timer_base = args.timer_name if args.timer_name else json_base
     timer_unit = f"{timer_base}.timer"
 
-    service_name = f"broadcast@{json_base}.json"
+    service_name = f"broadcast@{json_base}.json.service"
 
     if(timer_description):
         description = f"{timer_description} Timer"
