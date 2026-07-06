@@ -902,7 +902,7 @@ if __name__ == '__main__':
     # schedule video deletion task
     # don't setup deletion if forcibly killing process
     if(not gf.killer.kill_now and not testing_json):
-        delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose)
+        delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, None, verbose)
 
     #clean up control file so it's reset for next broadcast, do this twice in case somebody inadvertently hits pause after the broadcast ends
     try:

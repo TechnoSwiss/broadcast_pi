@@ -23,7 +23,7 @@ import create_cards # create_cards.py local file for creating the youtube title 
 
 import gspread # pip3 install gspread==4.0.0
 
-def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose = False):
+def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, broadcast_time = None, verbose = False):
     try:
         #deletion_command = 'echo ' + os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
         deletion_command = os.path.abspath(os.path.dirname(__file__)) + '/delete_event.py'
@@ -79,7 +79,11 @@ def setup_event_deletion(current_id, num_viewers, email_send, recurring, run_del
         if(recurring):
             deletion_command = deletion_command + ' -I'
 
-        deletion_command = deletion_command + ' --broadcast-time "' + datetime.now().strftime("%m/%d/%Y %H:%M:%S") + '"'
+        if(broadcast_time is not None):
+            broadcast_time = broadcast_time.strftime("%m/%d/%Y %H:%M:%S")
+        else:
+            broadcast_time = datetime.now().strftime("%m/%d/%Y %H:%M:%S")
+        deletion_command = deletion_command + ' --broadcast-time "' + broadcast_time + '"'
 
         if run_deletion_time < datetime.now():
             run_deletion_time = datetime.now() + timedelta(seconds=30)

@@ -226,7 +226,9 @@ if __name__ == "__main__":
         # Non-recurring (one-shot)
         if start_date:
             try:
-                broadcast_date = datetime.strptime(start_date, "%m/%d/Y").date()
+                broadcast_date = datetime.strptime(start_date, "%m/%d/%Y").date()
+            except ValueError:
+                broadcast_date = datetime.strptime(start_date, "%m/%d/%y").date()
             except ValueError:
                 print("ERROR: --date must be in MM/DD/YYYY format.", file=sys.stderr)
                 sys.exit(1)

@@ -237,12 +237,16 @@ def summarize_viewers_for_broadcast(youtube_id, ward, viewer_db_host, viewer_db_
     global _db_error_sent
     _db_error_sent = False
 
-    rows = get_unreported_entries_for_video(
-        youtube_id, ward,
-        viewer_db_host, viewer_db_user,
-        viewer_db_password, viewer_db_database,
-        num_from, num_to, verbose, test
-    )
+    try:
+        rows = get_unreported_entries_for_video(
+            youtube_id, ward,
+            viewer_db_host, viewer_db_user,
+            viewer_db_password, viewer_db_database,
+            num_from, num_to, verbose, test
+        )
+    except:
+        if(verbose): print(traceback.format_exc())
+        print("Failed to get viewers rows from DB")
 
     if not rows:
         return "", {}, 0

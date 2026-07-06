@@ -371,6 +371,19 @@ if __name__ == '__main__':
         print("!!If any of Base Image, Card Title, Card Subtitle, or Card Pause Subtitle are defined, ALL must be defined!!")
         sys.exit("A card create element was defined, but not all elements were defined")
 
+    viewer_summary_text = None
+    if(args.broadcast_time is not None):
+        broadcast_time = datetime.strptime(args.broadcast_time, "%m/%d/%Y %H:%M:%S")
+        if all([args.current_id, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database]):
+            try:
+                print("Collect viewer db summary")
+                viewer_summary_text = viewer_db.summarize_viewers_for_broadcast(args.current_id, ward, viewer_db_host, viewer_db_user, viewer_db_password, viewer_db_database, broadcast_time, num_from, num_to, verbose)[0]
+            except:
+                if(verbose): print(traceback.format_exc())
+                print("Failed to get viewers summary from DB")
+                if(num_from is not None and num_to is not None):
+                    sms.send_sms(num_from, num_to, ward + " failed to get viewers summary from DB!", verbose)
+
     if(args.broadcast_date is not None):
         broadcast_time = datetime.strptime(args.broadcast_date + " 12:00:00", "%m/%d/%Y %H:%M:%S")
     elif(args.broadcast_time is not None):
@@ -385,10 +398,10 @@ if __name__ == '__main__':
         count_viewers.write_viewer_image(args.viewers_file, args.image_file, ward, num_from, num_to, verbose)
 
     if(args.viewers_file is not None and args.image_file is not None):
-        send_viewer_file(args.viewers_file, args.image_file, args.email_from, args.email_to, ward, args.num_viewers, broadcast_time, None, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+        send_viewer_file(args.viewers_file, args.image_file, args.email_from, args.email_to, ward, args.num_viewers, broadcast_time, None, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose, viewer_summary_text)
         if(delete_current and args.current_id is not None):
             if(verbose) : print("Setup event deletion")
             run_deletion_time = broadcast_time + timedelta(minutes=int(args.delay_after))
-            delete_event.setup_event_deletion(args.current_id, args.num_viewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose)
+            delete_event.setup_event_deletion(args.current_id, args.num_viewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, broadcast_time, verbose)
     else:
-        send_total_views(args.email_from, args.email_to, ward, args.num_viewers, 0, broadcast_time, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose)
+        send_total_views(args.email_from, args.email_to, ward, args.num_viewers, 0, broadcast_time, args.dkim_private_key, args.dkim_selector, num_from, num_to, verbose, viewer_summary_text)

@@ -333,4 +333,4 @@ if __name__ == '__main__':
     if(not gf.killer.kill_now and delete_current):
         run_deletion_time = datetime.now() + timedelta(minutes=int(args.delay_after))
         print("video(s) deletion routine will run at {}".format(run_deletion_time.strftime("%H:%M %Y-%m-%d")))
-        delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, verbose)
+        delete_event.setup_event_deletion(current_id, numViewers, email_send, recurring, run_deletion_time, args, ward, num_from, num_to, None, verbose)
