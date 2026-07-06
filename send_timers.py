@@ -32,6 +32,27 @@ LIMITS = {
 }
 
 
+def check_wifi_ssid(target_ssid, verbose=False):
+    """Scan wlan0 for target_ssid. Returns True if found, False if not found, None on scan error."""
+    try:
+        subprocess.run(['sudo', 'ip', 'link', 'set', 'wlan0', 'up'], capture_output=True)
+        result = subprocess.run(
+            ['sudo', 'iw', 'dev', 'wlan0', 'scan'],
+            capture_output=True, text=True, timeout=15
+        )
+        found_ssids = re.findall(r'^\s+SSID: (.+)$', result.stdout, re.MULTILINE)
+        if verbose: print(f"SSIDs found: {found_ssids}")
+        return target_ssid in found_ssids
+    except FileNotFoundError:
+        if verbose: print("iw not found; install iw")
+        return None
+    except subprocess.TimeoutExpired:
+        if verbose: print("WiFi scan timed out")
+        return None
+    except Exception as e:
+        if verbose: print(f"WiFi scan error: {e}")
+        return None
+
 def parse_timer_line_minimal(line):
     parts = re.split(r'\s{2,}', line.strip())
 
@@ -142,6 +163,7 @@ if __name__ == '__main__':
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
+    parser.add_argument('-W','--wifi-ssid',type=str,default=None,help='Check that this WiFi SSID is visible (e.g. Liahona)')
     args = parser.parse_args()
 
     num_from = args.num_from
@@ -194,6 +216,9 @@ if __name__ == '__main__':
         # Filter out 'rtt' lines in Python instead of piping to `grep`
         ping_output = "\n".join([line for line in result.stdout.splitlines() if 'rtt' not in line])
         console_text += '\n\n' + ping_output
+        if result.stderr.strip():
+            diagnostics['ping_error'] = result.stderr.strip()
+            console_text += '\n' + result.stderr.strip()
     except:
         console_text += '\n\n !!! PING FAILED !!!'
     ping_delta = datetime.now() - start_ping
@@ -284,6 +309,18 @@ if __name__ == '__main__':
         diagnostics['ptz_status'] = 'Fail'
     console_text += f'\n\n PTZ Camera : {status}'
 
+    if args.wifi_ssid:
+        wifi_result = check_wifi_ssid(args.wifi_ssid, verbose)
+        if wifi_result is True:
+            console_text += f'\n\n WiFi SSID "{args.wifi_ssid}": Found'
+            diagnostics['wifi_ssid_status'] = 'Found'
+        elif wifi_result is False:
+            console_text += f'\n\n WiFi SSID "{args.wifi_ssid}": !!NOT FOUND!!'
+            diagnostics['wifi_ssid_status'] = 'Not Found'
+        else:
+            console_text += f'\n\n WiFi SSID "{args.wifi_ssid}": Scan Failed'
+            diagnostics['wifi_ssid_status'] = 'Scan Failed'
+
     diagnostics['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     failures = []
@@ -308,6 +345,11 @@ if __name__ == '__main__':
     if diagnostics['ptz_status'] != LIMITS['ptz_status']:
         failures.append(f"PTZ Camera: {diagnostics['ptz_status']}")
 
+    if args.wifi_ssid:
+        wifi_status = diagnostics.get('wifi_ssid_status')
+        if wifi_status and wifi_status != 'Found':
+            failures.append(f'WiFi SSID "{args.wifi_ssid}": {wifi_status}')
+
     if diagnostics['total_ping_time'] >= LIMITS['ping_resolve_time']:
         failures.append(f"Ping Resolve Time: {diagnostics['total_ping_time']:.2f}s")
 
@@ -318,7 +360,11 @@ if __name__ == '__main__':
         failures.append(f"Ping Max Unavailable: {diagnostics.get('ping_max')}")
 
     if float(diagnostics.get('packet_loss', 0)) > LIMITS['ping_packet_loss']:
-        failures.append(f"Ping Packet Loss: {diagnostics['packet_loss']}%")
+        ping_error = diagnostics.get('ping_error', '')
+        if ping_error:
+            failures.append(f"Ping Packet Loss: {diagnostics['packet_loss']}% ({ping_error})")
+        else:
+            failures.append(f"Ping Packet Loss: {diagnostics['packet_loss']}%")
 
     st_packet_loss = diagnostics.get('packet_loss_st', None)
 

@@ -157,6 +157,34 @@ def verify_live_broadcast(youtube, ward, args, current_id, html_filename, url_fi
 
     print("Live broadcast ID has been verified.")
 
+def resolve_rtmp_host(hostname, cache_file, ward, num_from=None, num_to=None, verbose=False):
+    try:
+        results = socket.getaddrinfo(hostname, None, socket.AF_INET)
+        ip = results[0][4][0]
+        try:
+            with open(cache_file, 'w') as f:
+                json.dump({'hostname': hostname, 'ip': ip}, f)
+        except Exception as e:
+            if verbose: print(f"Warning: could not write DNS cache: {e}")
+        if verbose: print(f"Resolved {hostname} -> {ip}")
+        return ip
+    except socket.gaierror as e:
+        print(f"!!DNS resolution failed for {hostname}: {e}!!")
+        try:
+            with open(cache_file, 'r') as f:
+                cache = json.load(f)
+            cached_ip = cache.get('ip')
+            if cached_ip:
+                msg = f"{ward} DNS failed for {hostname}, using cached IP {cached_ip}"
+                print(msg)
+                if num_from and num_to:
+                    sms.send_sms(num_from, num_to, msg, verbose)
+                return cached_ip
+        except Exception:
+            pass
+        print(f"No cached IP for {hostname}, falling back to hostname")
+        return hostname
+
 if __name__ == '__main__':
   config_file = None
   audio_record = False
@@ -630,10 +658,14 @@ if __name__ == '__main__':
         pause_audio_cmd = "-f concat -safe 0 -re -i tmp/mp3_play_list"
 
     #kick off broadcast
-    ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
-    ffmpeg_lbw = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters_lbw + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 1024k -maxrate 1024k -bufsize 2048k -strict experimental -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if camera_parameters_lbw is not None else ffmpeg
-    ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -loop 1 -framerate 4 -i ' + audio_only_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=12:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=185" -g 2 -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key if audio_only_image is not None else ffmpeg
-    ffmpeg_img = 'ffmpeg -thread_queue_size 2048 ' + pause_audio_cmd + ' -thread_queue_size 2048 -loop 1 -framerate 4 -i ' + args.pause_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=56:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=835" -g 2' + (' -acodec aac -ar 44100 -b:a 128k -ac 1 -shortest ' if pause_music is not None else ' ') + '-f flv rtmp://x.rtmp.youtube.com/live2/' + args.youtube_key
+    rtmp_dns_cache = os.path.join(script_dir, 'rtmp_dns_cache.json')
+    rtmp_host = resolve_rtmp_host('x.rtmp.youtube.com', rtmp_dns_cache, ward, num_from, num_to, verbose)
+    rtmp_url_base = 'rtmp://' + rtmp_host + '/live2/' + args.youtube_key
+
+    ffmpeg = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 4096k -maxrate 4096k -bufsize 2048k -strict experimental -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv ' + rtmp_url_base
+    ffmpeg_lbw = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048' + video_delay + camera_parameters_lbw + ' -c:v libx264 -profile:v high -pix_fmt yuv420p -preset superfast -g 7 -bf 2 -b:v 1024k -maxrate 1024k -bufsize 2048k -strict experimental -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv ' + rtmp_url_base if camera_parameters_lbw is not None else ffmpeg
+    ffmpeg_audio = 'ffmpeg -thread_queue_size 2048' + audio_delay + ' -f alsa -guess_layout_max 0 -i default:CARD=Device -thread_queue_size 2048 -loop 1 -framerate 4 -i ' + audio_only_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=12:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=185" -g 2 -threads 4 -crf 18 -acodec aac -ar 44100 -b:a 128k -ac 1' + audio_parameters + ' -f flv ' + rtmp_url_base if audio_only_image is not None else ffmpeg
+    ffmpeg_img = 'ffmpeg -thread_queue_size 2048 ' + pause_audio_cmd + ' -thread_queue_size 2048 -loop 1 -framerate 4 -i ' + args.pause_image + ' -r 4 -c:v libx264 -vf "fps=4, drawtext=font=calibri-bold:fontsize=56:fontcolor=#85200C:borderw=3:bordercolor=white:text=\\\'%{pts\:gmtime\:0\:%#M\\\\\:%S}\\\':x=(w-text_w)/2:y=835" -g 2' + (' -acodec aac -ar 44100 -b:a 128k -ac 1 -shortest ' if pause_music is not None else ' ') + '-f flv ' + rtmp_url_base
 
     broadcast_stream = [ffmpeg, ffmpeg_lbw, ffmpeg_audio]
     broadcast_downgrade_delay = [2, 4, 4] # how long to we wait before step from one broadcast stream to the next?

@@ -27,6 +27,31 @@ import global_file as gf
 TWILIO_AUTH = 'twilio.auth'
 
 SMS_FIFO_LENGTH = 5
+SMS_DEDUPE_MINUTES = 10  # repeat the same message at most once per this many minutes
+_SMS_DEDUPE_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'sms_dedupe.json')
+
+def _check_and_record_dedupe(sms_message):
+    """Returns True if message should be suppressed. Persists state to disk so restarts don't reset the window."""
+    try:
+        now = datetime.now()
+        cache = {}
+        if os.path.exists(_SMS_DEDUPE_FILE):
+            with open(_SMS_DEDUPE_FILE, 'r') as f:
+                raw = json.load(f)
+            # Load only entries still within the window (prune the rest)
+            cache = {k: datetime.fromisoformat(v) for k, v in raw.items()
+                     if (now - datetime.fromisoformat(v)).total_seconds() < SMS_DEDUPE_MINUTES * 60}
+
+        last_sent = cache.get(sms_message)
+        if last_sent and (now - last_sent).total_seconds() < SMS_DEDUPE_MINUTES * 60:
+            return True  # suppress
+
+        cache[sms_message] = now
+        with open(_SMS_DEDUPE_FILE, 'w') as f:
+            json.dump({k: v.isoformat() for k, v in cache.items()}, f)
+        return False  # allow
+    except Exception:
+        return False  # on any file error, allow the message through
 
 if os.path.exists(TWILIO_AUTH):
     try:
@@ -48,6 +73,14 @@ def send_sms(num_from, num_to, sms_message, verbose = False, bypass_limit = Fals
         # want to be able to disable SMS in the event of some issue that's causing mass-sms messages
         # check for presense of text file and don't send is it's there
         if( not os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/disable_sms')):
+            # Deduplicate: suppress identical messages within SMS_DEDUPE_MINUTES.
+            # State is persisted to disk so process restarts don't reset the window.
+            # After the window expires the message goes through again, giving a regular
+            # cadence (every ~10 min) while an issue persists.
+            if not bypass_limit and _check_and_record_dedupe(sms_message):
+                print(f"Suppressing duplicate SMS: {sms_message[:60]}")
+                return
+
             if(bypass_limit or not (len(gf.sms_fifo) >= SMS_FIFO_LENGTH and ((datetime.now() - gf.sms_fifo[0]).total_seconds() / 60) <= 1)): # check to see if the last message int he FIFO is more than 1 minute old
                 gf.sms_fifo.append(datetime.now())
                 if(len(gf.sms_fifo) > SMS_FIFO_LENGTH):

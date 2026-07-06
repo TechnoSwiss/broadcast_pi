@@ -106,17 +106,28 @@ def handle_poll_failure(process, process_terminate, poll_failure, index, audio_i
                 if(verbose): print(stderr_summary)
                 gf.log_exception(stderr_summary, "ffmpeg poll failure context")
 
+            specific_error_reported = False
+
+            if "connection refused" in err_output or "cannot open connection" in err_output:
+                specific_error_reported = True
+                print("!!Cannot connect to YouTube RTMP server!!")
+                if num_from and num_to:
+                    sms.send_sms(num_from, num_to, f"{ward} cannot connect to YouTube RTMP server!", verbose)
+
             if "invalid data" in err_output:
+                specific_error_reported = True
                 print("!!Issue with data from camera!!")
                 if num_from and num_to:
                     sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} issue with data from camera!", verbose)
 
             if "connection timed out" in err_output:
+                specific_error_reported = True
                 print("!!Connection to camera timed out!!")
                 if num_from and num_to:
                     sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} connection to camera timeout!", verbose)
 
             if "no route to host" in err_output:
+                specific_error_reported = True
                 print("!!Network issue reaching camera!!")
                 if num_from and num_to:
                     sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} network issue reaching camera!", verbose)
@@ -138,8 +149,9 @@ def handle_poll_failure(process, process_terminate, poll_failure, index, audio_i
                 sys.exit(f"{stream_type} Stream max failure reached")
             else:
                 print(f"!!{stream_type} Stream Died!! ({poll_failure})")
-                if num_from and num_to:
-                    sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} stream died! ({poll_failure})", verbose)
+                # Only SMS on first failure and only when no specific cause was already reported
+                if not specific_error_reported and poll_failure == 1 and num_from and num_to:
+                    sms.send_sms(num_from, num_to, f"{ward} {stream_type.lower()} stream died!", verbose)
     except:
         tb = traceback.format_exc()
         if verbose: print(tb)
