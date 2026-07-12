@@ -189,6 +189,8 @@ if __name__ == '__main__':
   config_file = None
   audio_record = False
   pause_music = None
+  verbose = False
+  faulthandler_log = None
 
   try:
     parser = argparse.ArgumentParser(description='Broadcast Live Ward Meeting to YouTube')
