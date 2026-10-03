@@ -43,6 +43,7 @@ def is_vpn_connected(pc_name, num_from = None, num_to = None, verbose = False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Restart VPN if not running.')
     parser.add_argument('-p','--pc-name',type=str,required=True,help='System name that script is running on.')
+    parser.add_argument('-u', '--unit',type=str,help='OpenVPN config name (the part after openvpn@)')
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
@@ -86,7 +87,8 @@ if __name__ == '__main__':
             #    sms.send_sms(num_from, num_to, args.pc_name + " VPN down, attempting to restart!", verbose)
             print("Restarting VPN.")
             # user account must have passwordless sudo access to restart the OpenVPN service for this to work (ie update sudoers 'ALL=NOPASSWD: /bin/systemctl restart openvpn')
-            systemctl_results = check_output(['sudo', 'systemctl', 'restart', 'openvpn'])
+            vpn_unit = 'openvpn@' + args.unit
+            systemctl_results = check_output(['sudo', '-n', 'systemctl', 'restart', vpn_unit])
             attempt_num += 1
         if(vpn_restart):
             # we want to verify the VPN came back up, and only text about a problem if it did not
