@@ -39,8 +39,7 @@ CLIENT_SECRETS_FILE = 'client_secret.json'
 SCOPES = [
     'https://www.googleapis.com/auth/youtube.force-ssl',
     'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive',
-    'https://www.googleapis.com/auth/drive.file'
+    'https://www.googleapis.com/auth/drive'
     ]
 API_SERVICE_YOUTUBE = 'youtube'
 API_SERVICE_GDRIVE = 'drive'

@@ -20,6 +20,8 @@ import global_file as gf # local file for sharing globals between files
 import gspread # pip3 install gspread==4.0.0
 
 googleDoc = 'Pi Stats' # I need to parameterize this at some point...
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
+LOG_FILE = os.path.join(SCRIPT_DIR, 'logs', 'send_timers.log') # failure details go here instead of SMS
 LIMITS = {
     'temp': 60.0,
     'ptz_status': 'Pass',
@@ -53,27 +55,40 @@ def check_wifi_ssid(target_ssid, verbose=False):
         if verbose: print(f"WiFi scan error: {e}")
         return None
 
+# systemctl list-timers columns: NEXT | LEFT | LAST | PASSED | UNIT | ACTIVATES
+# Match on the timestamp pattern instead of splitting on whitespace: systemd pads
+# LEFT/PASSED only to the widest value, so the widest row gets a single space and
+# a 2+ space split merges columns (intermittent "No <ward> timer scheduled" failures).
+TS_PATTERN = r'(?:\w{3} \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \S+|n/a|-)'
+TIMER_RE = re.compile(rf'^({TS_PATTERN})\s+(.*?)\s+({TS_PATTERN})\s+(.*?)\s+(\S+\.timer)\s+(\S+)$')
+
 def parse_timer_line_minimal(line):
-    parts = re.split(r'\s{2,}', line.strip())
-
-    # systemctl list-timers order:
-    # NEXT | LEFT | LAST | PASSED | UNIT | ACTIVATES
-    if len(parts) >= 6 and parts[0] != "NEXT":
-        try:
-            time_left_val = float(parts[1].replace('left', '').replace('h', '').strip())
-        except ValueError:
-            #time_left_val = 0.0  # or you could choose to skip this entry
-            return None
-
-        return {
-            'next_run': parts[0],
-            'time_left_raw': parts[1].replace('left', '').strip(),
-            'time_left': time_left_val,
-            'unit': parts[4],
-            'activates': parts[5]
-        }
-    else:
+    m = TIMER_RE.match(line.strip())
+    if not m or m.group(1) in ('n/a', '-'):
         return None
+    return {
+        'next_run': m.group(1),
+        'time_left_raw': m.group(2).replace('left', '').strip(),
+        'unit': m.group(5),
+        'activates': m.group(6)
+    }
+
+def write_failure_log(pc_name, failures, timers_list, raw_timers, verbose=False):
+    """Append failure details, parsed timers and raw list-timers output to LOG_FILE."""
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        with open(LOG_FILE, 'a') as f:
+            f.write(f"===== {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {pc_name} =====\n")
+            f.write("Failures:\n")
+            for fail in failures:
+                f.write(f"  - {fail}\n")
+            f.write(f"Parsed timers ({len(timers_list)}):\n")
+            for t in timers_list:
+                f.write(f"  {t['next_run']} | {t['time_left_raw']} | {t['unit']} | {t['activates']}\n")
+            f.write("Raw systemctl list-timers --all:\n")
+            f.write(raw_timers.rstrip() + "\n\n")
+    except Exception as e:
+        print(f"Could not write failure log {LOG_FILE}: {e}")
 
 def get_worksheet_case_insensitive(client, googleDoc, desired_tab_name):
     sh = client.open(googleDoc)
@@ -186,28 +201,25 @@ if __name__ == '__main__':
     diagnostics['temp'] = temp
     send_text += 'System: ' + args.pc_name + ', temperature is: ' + str(temp) + '°C\n\n'
 
-    if os.path.exists(os.path.abspath(os.path.dirname(__file__)) + '/testing'):
-        send_text += '!!TESTING ACTIVE!!\n\n\n'
+    if os.path.exists(os.path.join(SCRIPT_DIR, 'testing')):
+        send_text += '!!TESTING ACTIVE!!\n\n'
 
     timers_list = []
-    result = subprocess.run(['systemctl', 'list-timers'], capture_output=True, text=True, check=True)
-    timers = result.stdout
+    result = subprocess.run(['systemctl', 'list-timers', '--all'], capture_output=True, text=True, check=True)
+    raw_timers = result.stdout
     if(args.wards is not None):
-        timers = timers.splitlines()
-        wards = args.wards.split(',') + ['ACTIVATES'] # adding this so we get the header
-        send_text += f"\n{'NEXT':<28} {'LEFT':<9} {'UNIT':<20} ACTIVATES\n"
-        for line in timers:
-            if line.strip().startswith("NEXT"):
+        wards = [w.strip() for w in args.wards.split(',')]
+        send_text += f"{'NEXT':<28} {'LEFT':<9} {'UNIT':<20} ACTIVATES\n"
+        for line in raw_timers.splitlines():
+            if not any(ward in line for ward in wards):
                 continue
-            for ward in wards:
-                if(ward in line):
-                    timer = parse_timer_line_minimal(line)
-                    if timer:
-                        timers_list.append(timer)
-                        send_text += f"{timer['next_run']:<28} {timer['time_left_raw']:<9} {timer['unit']:<20} {timer['activates']}\n"
+            timer = parse_timer_line_minimal(line)
+            if timer:
+                timers_list.append(timer)
+                send_text += f"{timer['next_run']:<28} {timer['time_left_raw']:<9} {timer['unit']:<20} {timer['activates']}\n"
 
     else:
-        send_text += timers
+        send_text += raw_timers
 
     start_ping = datetime.now()
     try:
@@ -307,25 +319,25 @@ if __name__ == '__main__':
         if(verbose): print(f"Exception: {e}")
         status = f'!!! CAMERA PING FAILED !!!'
         diagnostics['ptz_status'] = 'Fail'
-    console_text += f'\n\n PTZ Camera : {status}'
+    console_text += f'\n\n PTZ Camera : {status}\n'
 
     if args.wifi_ssid:
         wifi_result = check_wifi_ssid(args.wifi_ssid, verbose)
         if wifi_result is True:
-            console_text += f'\n\n WiFi SSID "{args.wifi_ssid}": Found'
+            console_text += f'\n WiFi SSID "{args.wifi_ssid}": Found\n'
             diagnostics['wifi_ssid_status'] = 'Found'
         elif wifi_result is False:
-            console_text += f'\n\n WiFi SSID "{args.wifi_ssid}": !!NOT FOUND!!'
+            console_text += f'\n WiFi SSID "{args.wifi_ssid}": !!NOT FOUND!!\n'
             diagnostics['wifi_ssid_status'] = 'Not Found'
         else:
-            console_text += f'\n\n WiFi SSID "{args.wifi_ssid}": Scan Failed'
+            console_text += f'\n WiFi SSID "{args.wifi_ssid}": Scan Failed\n'
             diagnostics['wifi_ssid_status'] = 'Scan Failed'
 
     diagnostics['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     failures = []
 
-    for ward in args.wards.split(','):
+    for ward in (args.wards.split(',') if args.wards else []):
         ward = ward.strip()
         ward_timer_found = False
 
@@ -350,7 +362,9 @@ if __name__ == '__main__':
         if wifi_status and wifi_status != 'Found':
             failures.append(f'WiFi SSID "{args.wifi_ssid}": {wifi_status}')
 
-    if diagnostics['total_ping_time'] >= LIMITS['ping_resolve_time']:
+    if not isinstance(diagnostics.get('total_ping_time'), float):
+        failures.append(f"Ping Resolve Time: {diagnostics.get('total_ping_time')}")
+    elif diagnostics['total_ping_time'] >= LIMITS['ping_resolve_time']:
         failures.append(f"Ping Resolve Time: {diagnostics['total_ping_time']:.2f}s")
 
     try:
@@ -375,15 +389,16 @@ if __name__ == '__main__':
         failures.append("Speedtest Packet Loss: Unavailable")
 
     if diagnostics.get('download_mbps', 0) <= LIMITS['download_mbps']:
-        failures.append(f"Download Speed Low: {diagnostics['download_mbps']:.2f} Mbps")
+        failures.append(f"Download Speed Low: {diagnostics.get('download_mbps', 0):.2f} Mbps")
 
     if diagnostics.get('upload_mbps', 0) <= LIMITS['upload_mbps']:
-        failures.append(f"Upload Speed Low: {diagnostics['upload_mbps']:.2f} Mbps")
+        failures.append(f"Upload Speed Low: {diagnostics.get('upload_mbps', 0):.2f} Mbps")
 
     if failures:
-        failure_text += "\n\nFAILURES DETECTED:\n"
+        failure_text += "\nFAILURES DETECTED:\n"
         for fail in failures:
             failure_text += f"- {fail}\n"
+        write_failure_log(args.pc_name, failures, timers_list, raw_timers, verbose)
 
     failures_str = "\n".join(failures) if failures else "All checks passed"
 

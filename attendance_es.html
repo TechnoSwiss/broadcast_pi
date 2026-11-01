@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+    // Force HTTPS before anything else loads (page-only substitute for a server redirect)
+    if (location.protocol === "http:" && location.hostname !== "localhost") {
+      location.replace("https:" + location.href.substring(5));
+    }
+  </script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
@@ -42,7 +48,6 @@
       <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition">Continuar a la transmisión</button>
     </form>
 
-    <!-- Explanation moved to bottom -->
     <div class="bg-blue-50 border-l-4 border-blue-500 p-4 text-sm text-gray-700 rounded space-y-2 mt-6">
       <div>
         <strong>Por qué recopilamos esta información:</strong><br>
@@ -55,11 +60,12 @@
   <div id="fileInfo" class="mt-4 text-center text-gray-600 text-sm"></div>
 
 <script>
-const deviceId = getDeviceId();
 const WARD_NAME = "ward_name"
 const SUBMIT_URL = "https://hillsborostake.org/broadcast/log_viewer.php";
 const YOUTUBE_ID = "youtube_id"
+const YOUTUBE_URL = "https://www.youtube.com/watch?v=" + YOUTUBE_ID;
 const REDIRECT_SECONDS = 15;
+// --- Countdown (started first so nothing below can stop it) ---
 let remaining = REDIRECT_SECONDS;
 const redirectEl = document.getElementById("redirectMsg");
 redirectEl.textContent = `Redirigiendo en ${remaining} segundos...`;
@@ -70,59 +76,96 @@ setInterval(() => {
   }
 }, 1000);
 
+// --- Device ID (works without HTTPS) ---
+let deviceId = "unknown";
+try { deviceId = getDeviceId(); } catch (e) { console.error("Device ID error:", e); }
+
+function makeUUID() {
+  try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+  if (window.crypto && crypto.getRandomValues) {
+    return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
+      (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+  }
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+function getDeviceId() {
+  let id = getCookie("device_id");
+  if (!id) {
+    id = makeUUID();
+    setCookie("device_id", id, 365 * 5); // 5 years
+  }
+  return id;
+}
+
+// --- Network helpers with timeouts (captive networks can hang requests) ---
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))
+  ]);
+}
+
 function getIP() {
   return fetch("https://api.ipify.org?format=json").then(r => r.json()).then(d => d.ip);
 }
 
-document.getElementById("viewerForm").addEventListener("submit", async function (e) {
-  e.preventDefault();
-  const viewerCount = document.getElementById("viewerCount").value;
+// --- Submit ---
+let submitting = false;
+function goToBroadcast() {
+  window.location.assign(YOUTUBE_URL);
+}
+
+async function handleSubmit() {
+  if (submitting) return;
+  submitting = true;
+  setTimeout(goToBroadcast, 5000); // hard fallback: always redirect
+
+  const viewerCount = document.getElementById("viewerCount").value || "-1";
   const viewerName = document.getElementById("viewerName").value;
-  const ip = await getIP().catch(() => "unknown");
+  const ip = await withTimeout(getIP(), 2000).catch(() => "unknown");
   const payload = { viewerCount, viewerName, ip, device_id: deviceId, ward: WARD_NAME, youtubeID: YOUTUBE_ID };
 
-  //console.log("Submit =", WARD_NAME)
-  //console.log("YouTubeID =", YOUTUBE_ID)
-  saveCookies(viewerCount, viewerName);
+  try { saveCookies(viewerCount, viewerName); } catch (e) {}
 
-  fetch(SUBMIT_URL, {
+  withTimeout(fetch(SUBMIT_URL, {
     method: "POST",
     mode: "no-cors",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
-  }).finally(() => {
-    window.location.assign("https://www.youtube.com/watch?v=" + YOUTUBE_ID);
-  });
+  }), 3000).catch(() => {}).finally(goToBroadcast);
+}
+
+document.getElementById("viewerForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  handleSubmit();
 });
 
-// Auto-submit after 20 seconds of no interaction
+// --- Auto-submit after REDIRECT_SECONDS of no interaction ---
 let inactivityTimer = setTimeout(autoSubmit, REDIRECT_SECONDS * 1000);
 function resetTimer() {
+  if (submitting) return;
   clearTimeout(inactivityTimer);
   inactivityTimer = setTimeout(autoSubmit, REDIRECT_SECONDS * 1000);
   remaining = REDIRECT_SECONDS + 1;
 }
 function autoSubmit() {
   const viewerCountField = document.getElementById("viewerCount");
-
-  // Default to 1 if not selected
-  if (!viewerCountField.value) viewerCountField.value = "-1";
-
-  document.getElementById("viewerForm").requestSubmit();
+  if (!viewerCountField.value) viewerCountField.value = "-1"; // -1 = no selection made
+  handleSubmit(); // called directly; requestSubmit() is missing in some older/captive-portal browsers
 }
-["click", "input", "keydown", "touchstart"].forEach(event => {
-  document.addEventListener(event, resetTimer);
+["click", "input", "keydown", "touchstart"].forEach(evt => {
+  document.addEventListener(evt, resetTimer);
 });
 
+// --- Restore saved values ---
 document.addEventListener("DOMContentLoaded", () => {
   const savedCount = getCookie("viewerCount");
   const savedName = getCookie("viewerName");
-
   if (savedCount) {
     const countSelect = document.getElementById("viewerCount");
     if (countSelect) countSelect.value = savedCount;
   }
-
   if (savedName) {
     const nameInput = document.getElementById("viewerName");
     if (nameInput) nameInput.value = savedName;
@@ -138,23 +181,15 @@ function saveCookies(viewerCount, viewerName) {
   }
 }
 
-// Display last-modified time in Pacific Time with YouTube ID
+// --- Last-modified time in Pacific Time with YouTube ID ---
 function displayFileInfo() {
   const fileInfoEl = document.getElementById("fileInfo");
-
-  // Last-modified time from HTTP header
   const lastModRaw = document.lastModified;
-
   if (!lastModRaw) {
     fileInfoEl.textContent = `YouTube ID: ${YOUTUBE_ID}`;
     return;
   }
-
-  // Convert to Date
-  const utcDate = new Date(lastModRaw);
-
-  // Convert to Pacific Time explicitly
-  const pacificDateStr = utcDate.toLocaleString("en-US", {
+  const pacificDateStr = new Date(lastModRaw).toLocaleString("en-US", {
     timeZone: "America/Los_Angeles",
     year: "numeric",
     month: "numeric",
@@ -163,36 +198,25 @@ function displayFileInfo() {
     minute: "2-digit",
     hour12: true
   });
-
   fileInfoEl.textContent = `${pacificDateStr} — ${YOUTUBE_ID}`;
 }
-
 document.addEventListener("DOMContentLoaded", displayFileInfo);
 
-function getDeviceId() {
-  let id = getCookie("device_id");
-  if (!id) {
-    id = crypto.randomUUID();
-    setCookie("device_id", id, 365 * 5); // 5 years
-  }
-  return id;
-}
-
-// Cookie helpers
+// --- Cookie helpers (values encoded so names with ; or = don't break parsing) ---
 function setCookie(name, value, days) {
   const d = new Date();
-  d.setTime(d.getTime() + (days*24*60*60*1000));
-  let expires = "expires="+ d.toUTCString();
-  document.cookie = name + "=" + value + ";" + expires + ";path=/";
+  d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+  document.cookie = name + "=" + encodeURIComponent(value) + ";expires=" + d.toUTCString() + ";path=/";
 }
 
 function getCookie(name) {
-  let decoded = decodeURIComponent(document.cookie);
-  let ca = decoded.split(';');
-  name = name + "=";
-  for(let c of ca) {
-    while (c.charAt(0) == ' ') c = c.substring(1);
-    if (c.indexOf(name) == 0) return c.substring(name.length, c.length);
+  const prefix = name + "=";
+  for (let c of document.cookie.split(";")) {
+    c = c.trim();
+    if (c.indexOf(prefix) === 0) {
+      try { return decodeURIComponent(c.substring(prefix.length)); }
+      catch (e) { return c.substring(prefix.length); }
+    }
   }
   return "";
 }
