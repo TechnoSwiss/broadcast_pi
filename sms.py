@@ -18,6 +18,7 @@ import argparse
 import os
 import traceback
 import json
+import re
 from datetime import datetime
 from twilio.rest import Client # pip3 install twilio
 import global_file as gf
@@ -87,6 +88,10 @@ def sms_segments(text):
     length = sum(2 if ord(c) > 0xFFFF else 1 for c in text)
     return 1 if length <= 70 else -(-length // 67)
 
+def _redact(text):
+    """Hide any login embedded in a URL (https://user:pass@host) before printing a message to the console/syslog."""
+    return re.sub(r'(https?://)[^/@\s]+@', r'\1***:***@', text)
+
 def send_sms(num_from, num_to, sms_message, verbose = False, bypass_limit = False):
     try:
         # keep messages GSM-7 so one stray character (like a degree sign) doesn't triple the segment count
@@ -103,7 +108,7 @@ def send_sms(num_from, num_to, sms_message, verbose = False, bypass_limit = Fals
             # After the window expires the message goes through again, giving a regular
             # cadence (every ~10 min) while an issue persists.
             if not bypass_limit and _check_and_record_dedupe(sms_message):
-                print(f"Suppressing duplicate SMS: {sms_message[:60]}")
+                print(f"Suppressing duplicate SMS: {_redact(sms_message)[:60]}")
                 return
 
             if(bypass_limit or not (len(gf.sms_fifo) >= SMS_FIFO_LENGTH and ((datetime.now() - gf.sms_fifo[0]).total_seconds() / 60) <= 1)): # check to see if the last message int he FIFO is more than 1 minute old
@@ -119,7 +124,7 @@ def send_sms(num_from, num_to, sms_message, verbose = False, bypass_limit = Fals
             else:
                 gf.sms_missed = gf.sms_missed + 1
                 print("!!Rate limit hit on SMS!!")
-                print(sms_message)
+                print(_redact(sms_message))
     except:
         tb = traceback.format_exc()
         if(verbose): print(tb)
