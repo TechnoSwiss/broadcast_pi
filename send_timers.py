@@ -6,6 +6,10 @@ import traceback
 import subprocess
 import json
 import re
+import socket
+import ipaddress
+import urllib.request
+import urllib.parse
 
 from subprocess import Popen, check_output, PIPE
 from datetime import datetime, timedelta
@@ -33,6 +37,9 @@ LIMITS = {
     'upload_mbps': 25.0
 }
 
+EXTERNAL_IP_SOURCES = ['https://api.ipify.org', 'https://ifconfig.me/ip']
+DDNS_DEFAULT_UPDATE_PATH = '/nic/update' # dyndns2 protocol path, used by most DDNS providers
+
 
 def check_wifi_ssid(target_ssid, verbose=False):
     """Scan wlan0 for target_ssid. Returns True if found, False if not found, None on scan error."""
@@ -55,6 +62,71 @@ def check_wifi_ssid(target_ssid, verbose=False):
         if verbose: print(f"WiFi scan error: {e}")
         return None
 
+def get_external_ip(timeout=10, verbose=False):
+    """Return this site's public IPv4 address as a string, or None if every source fails."""
+    for url in EXTERNAL_IP_SOURCES:
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'send_timers/1.0'})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                ip = resp.read().decode().strip()
+            return str(ipaddress.IPv4Address(ip)) # validates the response is a bare IPv4 address
+        except Exception as e:
+            if verbose: print(f"External IP lookup via {url} failed: {e}")
+    return None
+
+def resolve_ddns(hostname, resolver=None, verbose=False):
+    """Return a sorted list of A records for hostname ([] if none), or None if the lookup itself failed.
+    Uses the system resolver unless a specific DNS server is given."""
+    try:
+        if resolver:
+            result = subprocess.run(
+                ['dig', '+short', '+time=3', '+tries=2', f'@{resolver}', hostname, 'A'],
+                capture_output=True, text=True, timeout=20
+            )
+            if result.returncode != 0:
+                if verbose: print(f"dig @{resolver} {hostname} failed: {result.stderr.strip()}")
+                return None
+            ips = []
+            for line in result.stdout.splitlines(): # dig +short can include CNAME targets, keep only IPv4 lines
+                try:
+                    ips.append(str(ipaddress.IPv4Address(line.strip())))
+                except ValueError:
+                    pass
+            return sorted(set(ips))
+        return sorted({ai[4][0] for ai in socket.getaddrinfo(hostname, None, socket.AF_INET)})
+    except socket.gaierror as e:
+        if verbose: print(f"DNS lookup for {hostname} returned no address: {e}")
+        return []
+    except Exception as e:
+        if verbose: print(f"DNS lookup for {hostname} failed: {e}")
+        return None
+
+def load_ddns_config(path, verbose=False):
+    """Load the DDNS JSON config. A bare filename is looked up in the script directory, same as broadcast.py.
+    Returns the config dict, or None if it can't be read."""
+    if "/" not in path:
+        path = os.path.join(SCRIPT_DIR, path)
+    try:
+        with open(path, 'r') as f:
+            config = json.load(f)
+        if not isinstance(config, dict):
+            raise ValueError("top level of DDNS config must be a JSON object")
+        return config
+    except Exception as e:
+        if verbose: print(f"Could not load DDNS config from {path}: {e}")
+        return None
+
+def build_ddns_update_url(update_host, hostname, ip, creds=None, update_path=DDNS_DEFAULT_UPDATE_PATH):
+    """Build a dyndns2-style update URL. With creds the login is embedded so one tap updates the record,
+    without them the browser prompts for the DDNS username/password."""
+    query = urllib.parse.urlencode({'hostname': hostname, 'myip': ip})
+    path = '/' + update_path.lstrip('/')
+    if creds:
+        user = urllib.parse.quote(creds[0], safe='')
+        password = urllib.parse.quote(creds[1], safe='')
+        return f"https://{user}:{password}@{update_host}{path}?{query}"
+    return f"https://{update_host}{path}?{query}"
+
 # systemctl list-timers columns: NEXT | LEFT | LAST | PASSED | UNIT | ACTIVATES
 # Match on the timestamp pattern instead of splitting on whitespace: systemd pads
 # LEFT/PASSED only to the widest value, so the widest row gets a single space and
@@ -72,6 +144,26 @@ def parse_timer_line_minimal(line):
         'unit': m.group(5),
         'activates': m.group(6)
     }
+
+def format_timers_for_sms(timers_list):
+    """Compact, phone-friendly timer list: one header per day, then 'time name' lines.
+    Avoids the wide column table (wraps badly on phones) and the broadcast@... unit names (get autolinked as emails)."""
+    lines = []
+    current_day = None
+    for t in timers_list:
+        name = t['unit'][:-len('.timer')] if t['unit'].endswith('.timer') else t['unit']
+        try:
+            dt = date_parser.parse(t['next_run'])
+        except Exception:
+            lines.append(f"{name} {t['next_run']}")
+            continue
+        day = f"{dt.strftime('%a')} {dt.month}/{dt.day}"
+        if day != current_day:
+            lines.append(day)
+            current_day = day
+        time_str = f"{dt.hour % 12 or 12}:{dt.minute:02d}{'a' if dt.hour < 12 else 'p'}"
+        lines.append(f" {time_str} {name}")
+    return "\n".join(lines)
 
 def write_failure_log(pc_name, failures, timers_list, raw_timers, verbose=False):
     """Append failure details, parsed timers and raw list-timers output to LOG_FILE."""
@@ -179,6 +271,7 @@ if __name__ == '__main__':
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
     parser.add_argument('-W','--wifi-ssid',type=str,default=None,help='Check that this WiFi SSID is visible (e.g. Liahona)')
+    parser.add_argument('-l','--ddns-config',type=str,default=None,help='JSON file with the DDNS check settings (ddns_hostname, ddns_update_host, ddns_username, ddns_password, ddns_resolver)')
     args = parser.parse_args()
 
     num_from = args.num_from
@@ -188,6 +281,7 @@ if __name__ == '__main__':
     send_text = ""
     console_text = ""
     failure_text = ""
+    ddns_sms_text = "" # kept out of console/log/sheet output since it can contain the DDNS key
     diagnostics = {}
     now = datetime.now()
     latest_start = (now + timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0, tzinfo=tz.tzlocal())
@@ -201,7 +295,8 @@ if __name__ == '__main__':
     diagnostics['temp'] = temp
     send_text += 'System: ' + args.pc_name + ', temperature is: ' + str(temp) + '°C\n\n'
 
-    if os.path.exists(os.path.join(SCRIPT_DIR, 'testing')):
+    testing_active = os.path.exists(os.path.join(SCRIPT_DIR, 'testing'))
+    if testing_active:
         send_text += '!!TESTING ACTIVE!!\n\n'
 
     timers_list = []
@@ -333,6 +428,43 @@ if __name__ == '__main__':
             console_text += f'\n WiFi SSID "{args.wifi_ssid}": Scan Failed\n'
             diagnostics['wifi_ssid_status'] = 'Scan Failed'
 
+    # DDNS check: does the hostname resolve to this site's current public IP?
+    external_ip = None
+    ddns_ips = None
+    ddns_status = None
+    ddns_config = None
+    ddns_hostname = None
+    DDNS_UPDATE_HOST = None
+    if args.ddns_config:
+        ddns_config = load_ddns_config(args.ddns_config, verbose)
+        if ddns_config is not None:
+            ddns_hostname = ddns_config.get('ddns_hostname')
+            DDNS_UPDATE_HOST = ddns_config.get('ddns_update_host')
+        if ddns_config is None:
+            ddns_status = 'Config Unreadable'
+        elif not ddns_hostname:
+            ddns_status = 'Config Missing ddns_hostname'
+        else:
+            external_ip = get_external_ip(verbose=verbose)
+            ddns_ips = resolve_ddns(ddns_hostname, ddns_config.get('ddns_resolver'), verbose)
+        if ddns_status is not None:
+            pass # config problem, nothing to compare
+        elif external_ip is None:
+            ddns_status = 'External IP Lookup Failed'
+        elif ddns_ips is None:
+            ddns_status = 'DNS Lookup Failed'
+        elif not ddns_ips:
+            ddns_status = 'No A Record'
+        elif external_ip in ddns_ips:
+            ddns_status = 'Pass'
+        else:
+            ddns_status = 'Mismatch'
+        diagnostics['external_ip'] = external_ip or 'Fail'
+        diagnostics['ddns_ips'] = ', '.join(ddns_ips) if ddns_ips else ''
+        diagnostics['ddns_status'] = ddns_status
+        console_text += (f"\n DDNS {ddns_hostname or '-'} : {', '.join(ddns_ips) if ddns_ips else '-'}"
+                         f" | External IP : {external_ip or '-'} | {ddns_status}\n")
+
     diagnostics['timestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     failures = []
@@ -361,6 +493,22 @@ if __name__ == '__main__':
         wifi_status = diagnostics.get('wifi_ssid_status')
         if wifi_status and wifi_status != 'Found':
             failures.append(f'WiFi SSID "{args.wifi_ssid}": {wifi_status}')
+
+    if args.ddns_config and ddns_status != 'Pass':
+        if ddns_status in ('Mismatch', 'No A Record'):
+            dns_shown = ', '.join(ddns_ips) if ddns_ips else 'no A record'
+            failures.append(f"DDNS needs update: {ddns_hostname} is {dns_shown}, external IP is {external_ip}")
+            if DDNS_UPDATE_HOST:
+                username = ddns_config.get('ddns_username')
+                password = ddns_config.get('ddns_password')
+                creds = (username, password) if username and password else None
+                # the link goes only in the SMS: failures are also written to the log file and the Google Sheet
+                ddns_sms_text = ("\nTap to update DDNS:\n"
+                                 + build_ddns_update_url(DDNS_UPDATE_HOST, ddns_hostname, external_ip, creds,
+                                                         ddns_config.get('ddns_update_path', DDNS_DEFAULT_UPDATE_PATH))
+                                 + "\n")
+        else:
+            failures.append(f"DDNS check {ddns_hostname or args.ddns_config}: {ddns_status}")
 
     if not isinstance(diagnostics.get('total_ping_time'), float):
         failures.append(f"Ping Resolve Time: {diagnostics.get('total_ping_time')}")
@@ -407,9 +555,28 @@ if __name__ == '__main__':
     else:
         print("!!Can't Log Diagnostic Data with a Ward!!")
 
+    # console never shows the credentialed link, only a version without the login
+    ddns_console_text = ""
+    if ddns_sms_text:
+        ddns_console_text = ("\nDDNS update link (login removed): "
+                             + build_ddns_update_url(DDNS_UPDATE_HOST, ddns_hostname, external_ip, None,
+                                                     ddns_config.get('ddns_update_path', DDNS_DEFAULT_UPDATE_PATH))
+                             + "\n")
+
     if(num_from is not None and num_to is not None):
-        print(send_text + console_text + failure_text)
-        sms.send_sms(num_from, num_to, send_text + failure_text, verbose)
+        print(send_text + console_text + failure_text + ddns_console_text)
+        if(args.wards is not None):
+            # compact layout for phones, the console keeps the full table
+            sms_text = f"System: {args.pc_name}, temperature: {temp}C\n"
+            if testing_active:
+                sms_text += "!!TESTING ACTIVE!!\n"
+            sms_text += "\n" + (format_timers_for_sms(timers_list) or "No timers found") + "\n" + failure_text
+        else:
+            sms_text = send_text + failure_text
+        sms.send_sms(num_from, num_to, sms_text, verbose) # sms.py makes the text GSM-7 safe
+        if ddns_sms_text:
+            # separate message so the link is easy to tap and the status message stays short
+            sms.send_sms(num_from, num_to, ddns_sms_text.strip(), verbose)
     else:
-        print(send_text + console_text + failure_text)
+        print(send_text + console_text + failure_text + ddns_console_text)
         print("\n\nNo numbers given, nothing to send")

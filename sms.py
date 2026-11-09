@@ -26,6 +26,14 @@ import global_file as gf
 #two line ascii text file, first line account sid, second line auth token
 TWILIO_AUTH = 'twilio.auth'
 
+# SMS is sent as GSM-7 (153 chars per segment) only if EVERY character is in the GSM-7 set,
+# a single character outside it (like the degree sign) switches the whole message to UCS-2 (67 chars per segment)
+GSM7_BASIC = ("@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?"
+              "¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà")
+GSM7_EXTENDED = "^{}\\[~]|€" # these cost two characters each
+GSM7_REPLACEMENTS = {'°': '', '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
+                     '\u2013': '-', '\u2014': '-', '\u2026': '...', '\t': ' ', '`': "'"}
+
 SMS_FIFO_LENGTH = 5
 SMS_DEDUPE_MINUTES = 10  # repeat the same message at most once per this many minutes
 _SMS_DEDUPE_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'sms_dedupe.json')
@@ -65,8 +73,25 @@ if os.path.exists(TWILIO_AUTH):
 
 client = Client(account_sid, auth_token)
 
+def to_gsm7(text):
+    """Make text GSM-7 safe so the SMS isn't sent as UCS-2: swap common lookalikes, drop anything else."""
+    for bad, good in GSM7_REPLACEMENTS.items():
+        text = text.replace(bad, good)
+    return ''.join(c for c in text if c in GSM7_BASIC or c in GSM7_EXTENDED)
+
+def sms_segments(text):
+    """Estimate how many SMS segments text will be sent as."""
+    if all(c in GSM7_BASIC or c in GSM7_EXTENDED for c in text):
+        length = sum(2 if c in GSM7_EXTENDED else 1 for c in text)
+        return 1 if length <= 160 else -(-length // 153)
+    length = sum(2 if ord(c) > 0xFFFF else 1 for c in text)
+    return 1 if length <= 70 else -(-length // 67)
+
 def send_sms(num_from, num_to, sms_message, verbose = False, bypass_limit = False):
     try:
+        # keep messages GSM-7 so one stray character (like a degree sign) doesn't triple the segment count
+        sms_message = to_gsm7(sms_message)
+        if(verbose): print(f"SMS length {len(sms_message)} chars, about {sms_segments(sms_message)} segment(s)")
         if(type(num_to) != list):
             num_to = [num_to]
         
