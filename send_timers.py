@@ -49,6 +49,10 @@ def check_wifi_ssid(target_ssid, verbose=False):
             ['sudo', 'iw', 'dev', 'wlan0', 'scan'],
             capture_output=True, text=True, timeout=15
         )
+        if result.returncode != 0:
+            # e.g. RF-kill blocked, wlan0 missing, or radio down: a failed scan is not the same as "SSID not found"
+            if verbose: print(f"WiFi scan failed (rc={result.returncode}): {result.stderr.strip()}")
+            return None
         found_ssids = re.findall(r'^\s+SSID: (.+)$', result.stdout, re.MULTILINE)
         if verbose: print(f"SSIDs found: {found_ssids}")
         return target_ssid in found_ssids
@@ -270,7 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('-F','--num-from',type=str,help='SMS notification from number - Twilio account number')
     parser.add_argument('-T','--num-to',type=str,help='SMS number to send notification to')
     parser.add_argument('-v','--verbose',default=False, action='store_true',help='Increases vebosity of error messages')
-    parser.add_argument('-W','--wifi-ssid',type=str,default=None,help='Check that this WiFi SSID is visible (e.g. Liahona)')
+    parser.add_argument('-W','--wifi-ssid',type=str,default=None,help='Check that this WiFi SSID is visible')
     parser.add_argument('-l','--ddns-config',type=str,default=None,help='JSON file with the DDNS check settings (ddns_hostname, ddns_update_host, ddns_username, ddns_password, ddns_resolver)')
     args = parser.parse_args()
 
